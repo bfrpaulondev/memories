@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Photo from '@/models/Photo';
-import cloudinary from '@/lib/cloudinary';
 
 // In-memory fallback when MongoDB is unavailable
 let memoryPhotos: any[] = [];
@@ -62,21 +61,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nenhuma foto enviada' }, { status: 400 });
     }
 
-    // Upload to Cloudinary
-    const folder = isSignature ? 'wedding/signatures' : 'wedding/photos';
-    const uploadResult = await new Promise<{ public_id: string; secure_url: string }>((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder, resource_type: 'image', transformation: [{ quality: 'auto', fetch_format: 'auto' }] },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve({ public_id: result!.public_id, secure_url: result!.secure_url });
-        }
-      ).end(fileBuffer);
-    });
+    // Convert to base64 data URL for storage
+    const base64Data = fileBuffer.toString('base64');
+    const mimeType = fileName.match(/\.(png|webp)$/i) ? 
+      (fileName.match(/\.png$/i) ? 'image/png' : 'image/webp') : 'image/jpeg';
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
     const photoData: any = {
-      cloudinaryId: uploadResult.public_id,
-      cloudinaryUrl: uploadResult.secure_url,
+      cloudinaryId: `local-${Date.now()}`,
+      cloudinaryUrl: dataUrl,
       originalName: fileName,
       guestName,
       frame,
@@ -89,9 +82,10 @@ export async function POST(request: NextRequest) {
     // Save to MongoDB if connected
     if (conn) {
       try {
+        // Store the image data in the photo document
         const photo = await Photo.create({
-          cloudinaryId: uploadResult.public_id,
-          cloudinaryUrl: uploadResult.secure_url,
+          cloudinaryId: `local-${Date.now()}`,
+          cloudinaryUrl: dataUrl,
           originalName: fileName,
           guestName,
           size: fileBuffer.length,
@@ -102,21 +96,25 @@ export async function POST(request: NextRequest) {
         });
         photoData.id = photo._id.toString();
         photoData.createdAt = photo.createdAt;
+        photoData.cloudinaryId = photo.cloudinaryId;
+        photoData.cloudinaryUrl = dataUrl;
 
         // Notify WebSocket
         try {
           fetch('http://localhost:3001/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'new_photo', photo: { ...photoData } }),
+            body: JSON.stringify({ type: 'new_photo', photo: { ...photoData, cloudinaryUrl: dataUrl } }),
           });
         } catch {}
-      } catch {
+      } catch (dbErr) {
+        console.error('MongoDB save error:', dbErr);
         photoData.id = `local-${Date.now()}`;
+        memoryPhotos.push({ ...photoData, cloudinaryUrl: dataUrl });
       }
     } else {
       photoData.id = `local-${Date.now()}`;
-      memoryPhotos.push(photoData);
+      memoryPhotos.push({ ...photoData, cloudinaryUrl: dataUrl });
     }
 
     return NextResponse.json({ success: true, photo: photoData });

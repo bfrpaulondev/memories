@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Photo from '@/models/Photo';
-import cloudinary from '@/lib/cloudinary';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,19 +22,13 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const fileBuffer = Buffer.from(bytes);
 
-    const uploadResult = await new Promise<{ public_id: string; secure_url: string }>((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder: 'wedding/signatures', resource_type: 'image', transformation: [{ quality: 'auto', fetch_format: 'auto' }] },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve({ public_id: result!.public_id, secure_url: result!.secure_url });
-        }
-      ).end(fileBuffer);
-    });
+    // Store as base64 data URL in MongoDB
+    const base64Data = fileBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64Data}`;
 
     const signatureData: any = {
-      cloudinaryId: uploadResult.public_id,
-      cloudinaryUrl: uploadResult.secure_url,
+      cloudinaryId: `local-sig-${Date.now()}`,
+      cloudinaryUrl: dataUrl,
       originalName: `assinatura-${Date.now()}.png`,
       guestName,
       frame: 'classic',
@@ -48,8 +41,8 @@ export async function POST(request: NextRequest) {
     if (conn) {
       try {
         const signature = await Photo.create({
-          cloudinaryId: uploadResult.public_id,
-          cloudinaryUrl: uploadResult.secure_url,
+          cloudinaryId: `local-sig-${Date.now()}`,
+          cloudinaryUrl: dataUrl,
           originalName: `assinatura-${Date.now()}.png`,
           guestName,
           size: fileBuffer.length,
@@ -65,10 +58,11 @@ export async function POST(request: NextRequest) {
           fetch('http://localhost:3001/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'new_signature', photo: { ...signatureData } }),
+            body: JSON.stringify({ type: 'new_signature', photo: { ...signatureData, cloudinaryUrl: dataUrl } }),
           });
         } catch {}
-      } catch {
+      } catch (dbErr) {
+        console.error('MongoDB signature save error:', dbErr);
         signatureData.id = `local-sig-${Date.now()}`;
       }
     } else {
@@ -76,8 +70,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, signature: signatureData });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Signature upload error:', error);
-    return NextResponse.json({ error: 'Erro ao salvar assinatura.' }, { status: 500 });
+    const detail = error?.message || String(error);
+    return NextResponse.json({ error: 'Erro ao salvar assinatura.', detail }, { status: 500 });
   }
 }
