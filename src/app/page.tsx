@@ -1059,14 +1059,22 @@ export default function Home() {
     ? isHardPage(currentPage + 1) || isHardPage(currentPage + 2)
     : isHardPage(currentPage) || isHardPage(currentPage - 1)
 
-  // ─── Shadow intensity (0–1) ────────────────────────
+  // ─── Shadow & fold intensity (0–1) ────────────────
   const shadowIntensity = flipAngle / 180
   const foldIntensity = Math.sin(flipAngle * Math.PI / 180) // peaks at 90°
+  const absAngle = Math.abs(flipAngle)
+
+  // ─── Realistic book fold calculations ──────────────
+  // Page lifts off surface — translateZ increases as page rises
+  const liftDistance = foldIntensity * 6
+  // Page edge visible thickness (simulates paper stack at fold)
+  const edgeThickness = Math.max(0, foldIntensity * 4)
 
   // ─── CSS transform for the flipping page ───────────
+  // The fold uses rotateY + translateZ to simulate the page lifting off the surface
   const flipTransform = isForward
-    ? `rotateY(${-flipAngle}deg)`
-    : `rotateY(${flipAngle}deg)`
+    ? `translateZ(${liftDistance}px) rotateY(${-flipAngle}deg)`
+    : `translateZ(${liftDistance}px) rotateY(${flipAngle}deg)`
 
   // ─── Page indicator ────────────────────────────────
   const pageIndicator = isMobile
@@ -1126,17 +1134,16 @@ export default function Home() {
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerLeave}
           >
-            {/* ═══ DESKTOP: Double-page spread ═══ */}
+            {/* ═══ DESKTOP: Double-page spread with realistic fold ═══ */}
             {!isMobile && (
               <>
-                {/* Page stacking effect — visible edges on the right side */}
+                {/* Page stacking effect — visible edges peeking out */}
                 {currentPage + 3 < totalPages && (
                   <div className="page-stack-edge" style={{ right: '2px', width: 'calc(50% + 4px)', zIndex: 0 }} />
                 )}
                 {currentPage + 3 < totalPages && (
                   <div className="page-stack-edge" style={{ right: '4px', width: 'calc(50% + 2px)', zIndex: 0 }} />
                 )}
-                {/* Page stacking effect — visible edges on the left side */}
                 {currentPage > 1 && (
                   <div className="page-stack-edge-left" style={{ left: '2px', zIndex: 0 }} />
                 )}
@@ -1148,17 +1155,15 @@ export default function Home() {
                 <div className="absolute left-0 top-0 w-1/2 h-full overflow-hidden rounded-l-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-left" />
                   {renderPage(desktopLeftStatic)}
-                  {/* Corner peel hint — bottom-right of left page (backward direction) */}
                   {!isActive && currentPage > 0 && (
                     <div className="page-corner-peel page-corner-peel-left" />
                   )}
                 </div>
 
-                {/* Static right page (under flipping page) */}
+                {/* Static right page (underneath the flipping page) */}
                 <div className="absolute right-0 top-0 w-1/2 h-full overflow-hidden rounded-r-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-right" />
                   {renderPage(desktopRightStatic)}
-                  {/* Corner peel hint — bottom-left of right page (forward direction) */}
                   {!isActive && currentPage < maxPage && (
                     <div className="page-corner-peel page-corner-peel-right" />
                   )}
@@ -1166,6 +1171,35 @@ export default function Home() {
 
                 {/* Spine */}
                 <div className="book-spine" />
+
+                {/* ─── PAGE EDGE THICKNESS ─── */}
+                {/* Visible when the page is folding — shows the paper edge at the spine */}
+                {isActive && flipDirection && absAngle > 5 && absAngle < 175 && (
+                  <div
+                    className="page-edge-thickness"
+                    style={{
+                      left: isForward ? '50%' : undefined,
+                      right: isForward ? undefined : '50%',
+                      width: `${edgeThickness}px`,
+                      opacity: foldIntensity,
+                      zIndex: 11,
+                    }}
+                  />
+                )}
+
+                {/* ─── FOLD CREASE HIGHLIGHT ─── */}
+                {/* Bright line at the fold point — light catching the paper edge */}
+                {isActive && flipDirection && absAngle > 3 && absAngle < 177 && (
+                  <div
+                    className="fold-crease-highlight"
+                    style={{
+                      left: isForward ? '50%' : undefined,
+                      right: isForward ? undefined : '50%',
+                      opacity: foldIntensity * 0.8,
+                      zIndex: 12,
+                    }}
+                  />
+                )}
 
                 {/* ─── Flipping page ─── */}
                 {isActive && flipDirection && (
@@ -1182,13 +1216,22 @@ export default function Home() {
                     {/* Front face */}
                     <div className="page-face page-face-front">
                       {renderPage(desktopFrontFace)}
-                      {/* Light reflection during flip — simulates paper catching light */}
-                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.7 }} />
-                      {/* Page bending gradient — simulates page curving near spine */}
+                      {/* Light reflection — simulates paper surface catching light as it curves */}
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.8 }} />
+                      {/* Cylindrical bend — dark gradient at the fold edge simulating page curving */}
                       <div
-                        className="page-bend-gradient"
+                        className="page-cylindrical-bend"
                         style={{
-                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.3,
+                          opacity: foldIntensity * 0.45,
+                          left: isForward ? 0 : undefined,
+                          right: isForward ? undefined : 0,
+                        }}
+                      />
+                      {/* Fold shadow — the crease darkens the page near the fold */}
+                      <div
+                        className="page-fold-shadow-inner"
+                        style={{
+                          opacity: foldIntensity * 0.6,
                           left: isForward ? 0 : undefined,
                           right: isForward ? undefined : 0,
                         }}
@@ -1197,11 +1240,20 @@ export default function Home() {
                     {/* Back face */}
                     <div className="page-face page-face-back">
                       {renderPage(desktopBackFace)}
-                      {/* Page bending gradient on back face */}
+                      {/* Back face fold shadow — darker near the fold on the reverse side */}
                       <div
-                        className="page-bend-gradient-back"
+                        className="page-back-fold-shadow"
                         style={{
-                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.4,
+                          opacity: foldIntensity * 0.5,
+                          left: isForward ? undefined : 0,
+                          right: isForward ? 0 : undefined,
+                        }}
+                      />
+                      {/* Back face light reflection — light catching the back of the page */}
+                      <div
+                        className="page-back-light"
+                        style={{
+                          opacity: foldIntensity * 0.3,
                           left: isForward ? undefined : 0,
                           right: isForward ? 0 : undefined,
                         }}
@@ -1213,38 +1265,37 @@ export default function Home() {
                 {/* ─── Dynamic shadows during flip ─── */}
                 {isActive && flipDirection && (
                   <>
-                    {/* Shadow darkening the left page during forward flip */}
+                    {/* Shadow on the left page as the page folds over it */}
                     {isForward && (
-                      <div className="flip-shadow-left" style={{ opacity: shadowIntensity * 0.85 }} />
+                      <div className="flip-shadow-left" style={{ opacity: shadowIntensity * 0.9 }} />
                     )}
-                    {/* Shadow darkening the right page during backward flip */}
+                    {/* Shadow on the right page as the page folds back */}
                     {isBackward && (
-                      <div className="flip-shadow-right" style={{ opacity: shadowIntensity * 0.85 }} />
+                      <div className="flip-shadow-right" style={{ opacity: shadowIntensity * 0.9 }} />
                     )}
-                    {/* Fold line shadow at spine */}
+                    {/* Fold crease shadow at the spine — the deep shadow where the page folds */}
                     <div
                       className={`fold-shadow ${isFlippingHard ? 'hard-fold-shadow' : ''}`}
-                      style={{ opacity: foldIntensity * 0.95 }}
+                      style={{ opacity: foldIntensity }}
                     />
-                    {/* Cast shadow — the page's shadow falling on the page beneath */}
-                    {isForward && flipAngle > 10 && flipAngle < 170 && (
+                    {/* Cast shadow — the page's shadow projected onto the page beneath */}
+                    {isForward && absAngle > 8 && absAngle < 172 && (
                       <div
-                        className="page-cast-shadow"
+                        className="page-cast-shadow-realistic"
                         style={{
                           left: '50%',
-                          width: `${Math.sin(flipAngle * Math.PI / 180) * 25}%`,
-                          opacity: foldIntensity * 0.4,
+                          width: `${Math.sin(flipAngle * Math.PI / 180) * 30}%`,
+                          opacity: foldIntensity * 0.5,
                         }}
                       />
                     )}
-                    {isBackward && flipAngle > 10 && flipAngle < 170 && (
+                    {isBackward && absAngle > 8 && absAngle < 172 && (
                       <div
-                        className="page-cast-shadow"
+                        className="page-cast-shadow-realistic"
                         style={{
                           right: '50%',
-                          width: `${Math.sin(flipAngle * Math.PI / 180) * 25}%`,
-                          direction: 'rtl',
-                          opacity: foldIntensity * 0.4,
+                          width: `${Math.sin(flipAngle * Math.PI / 180) * 30}%`,
+                          opacity: foldIntensity * 0.5,
                         }}
                       />
                     )}
@@ -1253,7 +1304,7 @@ export default function Home() {
               </>
             )}
 
-            {/* ═══ MOBILE: Single page view ═══ */}
+            {/* ═══ MOBILE: Single page view with realistic fold ═══ */}
             {isMobile && (
               <>
                 {/* Page stacking effect */}
@@ -1264,14 +1315,40 @@ export default function Home() {
                   <div className="page-stack-edge-mobile" style={{ bottom: '-4px', right: '-4px' }} />
                 )}
 
-                {/* Static page underneath (revealed during flip, or current when idle) */}
+                {/* Static page underneath */}
                 <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ zIndex: 1 }}>
                   {renderPage(isActive ? mobileUnderPage : safeGet(currentPage))}
-                  {/* Corner peel hint — forward */}
                   {!isActive && currentPage < maxPage && (
                     <div className="page-corner-peel page-corner-peel-right" />
                   )}
                 </div>
+
+                {/* Page edge thickness — mobile */}
+                {isActive && flipDirection && absAngle > 5 && absAngle < 175 && (
+                  <div
+                    className="page-edge-thickness"
+                    style={{
+                      left: isForward ? 0 : undefined,
+                      right: isForward ? undefined : 0,
+                      width: `${edgeThickness}px`,
+                      opacity: foldIntensity,
+                      zIndex: 11,
+                    }}
+                  />
+                )}
+
+                {/* Fold crease highlight — mobile */}
+                {isActive && flipDirection && absAngle > 3 && absAngle < 177 && (
+                  <div
+                    className="fold-crease-highlight"
+                    style={{
+                      left: isForward ? 0 : undefined,
+                      right: isForward ? undefined : 0,
+                      opacity: foldIntensity * 0.7,
+                      zIndex: 12,
+                    }}
+                  />
+                )}
 
                 {/* ─── Flipping page ─── */}
                 {isActive && flipDirection && (
@@ -1288,11 +1365,19 @@ export default function Home() {
                     {/* Front face */}
                     <div className="page-face page-face-front">
                       {renderPage(mobileFrontFace)}
-                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.5 }} />
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.6 }} />
                       <div
-                        className="page-bend-gradient"
+                        className="page-cylindrical-bend"
                         style={{
-                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.25,
+                          opacity: foldIntensity * 0.35,
+                          left: isForward ? 0 : undefined,
+                          right: isForward ? undefined : 0,
+                        }}
+                      />
+                      <div
+                        className="page-fold-shadow-inner"
+                        style={{
+                          opacity: foldIntensity * 0.5,
                           left: isForward ? 0 : undefined,
                           right: isForward ? undefined : 0,
                         }}
@@ -1302,9 +1387,17 @@ export default function Home() {
                     <div className="page-face page-face-back">
                       {renderPage(mobileBackFace)}
                       <div
-                        className="page-bend-gradient-back"
+                        className="page-back-fold-shadow"
                         style={{
-                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.35,
+                          opacity: foldIntensity * 0.45,
+                          left: isForward ? undefined : 0,
+                          right: isForward ? 0 : undefined,
+                        }}
+                      />
+                      <div
+                        className="page-back-light"
+                        style={{
+                          opacity: foldIntensity * 0.25,
                           left: isForward ? undefined : 0,
                           right: isForward ? 0 : undefined,
                         }}
