@@ -36,18 +36,29 @@ interface Photo {
 
 type FrameStyle = 'classic' | 'floral' | 'modern'
 
+type BookPageType = 'cover' | 'welcome' | 'photo' | 'signatures' | 'backcover'
+
+interface BookPage {
+  type: BookPageType
+  photo?: Photo
+  allSignatures?: Photo[]
+  hard?: boolean
+}
+
+type FlipDirection = 'forward' | 'backward'
+
 // ─── Constants ───────────────────────────────────────────
 const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2025'
 const WEDDING_DATE = '2026'
-const FLIP_ANIM_DURATION = 600
+const FLIP_COMPLETE_DURATION = 500
+const FLIP_SPRING_DURATION = 350
+const DRAG_THRESHOLD = 8
 
 // ─── Utility: Parse guestName with frame & message ───────
 function parseGuestData(guestName: string, frame?: string, message?: string) {
-  // New format: data is in separate fields
   if (frame) {
     return { name: guestName || 'Convidado', frame, message: message || '' }
   }
-  // Legacy format: guestName contains encoded data
   const nameAndRest = guestName.split('|frame:')
   const name = nameAndRest[0] || 'Convidado'
   const rest = nameAndRest[1] || 'classic'
@@ -58,6 +69,12 @@ function parseGuestData(guestName: string, frame?: string, message?: string) {
   const validFrames: FrameStyle[] = ['classic', 'floral', 'modern']
   const f = validFrames.includes(frameStr as FrameStyle) ? (frameStr as FrameStyle) : 'classic'
   return { name, frame: f, message: isSig ? '' : msg }
+}
+
+// ─── Helper: check if element is interactive ─────────────
+function isInteractiveElement(el: HTMLElement | null): boolean {
+  if (!el) return false
+  return !!el.closest('button, input, textarea, canvas, select, a, [role="button"], [data-no-flip]')
 }
 
 // ─── Ornamental Divider Component ────────────────────────
@@ -355,7 +372,6 @@ function InlineSignatureArea({
     } finally { setIsSaving(false) }
   }
 
-  // If there's a saved signature, show it
   if (savedSignatureUrl) {
     return (
       <div className="flex items-center gap-2 py-1.5 px-2" style={{ borderTop: '1px solid rgba(201,169,110,0.15)' }}>
@@ -423,7 +439,6 @@ export default function Home() {
   const [photos, setPhotos] = useState<Photo[]>([])
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(true)
   const [currentPage, setCurrentPage] = useState(0)
-  const [isFlipping, setIsFlipping] = useState(false)
   const [isPinVerified, setIsPinVerified] = useState(false)
   const [showPinModal, setShowPinModal] = useState(false)
   const [showUploadDialog, setShowUploadDialog] = useState(false)
@@ -434,17 +449,31 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFrame, setSelectedFrame] = useState<FrameStyle>('classic')
   const [isMobile, setIsMobile] = useState(false)
-  const [flipAngle, setFlipAngle] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
 
+  // ─── Flip engine state ─────────────────────────────
+  const [flipAngle, setFlipAngle] = useState(0) // 0–180 (always positive)
+  const [flipDirection, setFlipDirection] = useState<FlipDirection | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isFlipping, setIsFlipping] = useState(false)
+
+  // ─── Refs ──────────────────────────────────────────
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const socketRef = useRef<ReturnType<typeof io> | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const flipPageRef = useRef<HTMLDivElement>(null)
   const bookContainerRef = useRef<HTMLDivElement>(null)
-  const dragStartRef = useRef<{ x: number; time: number } | null>(null)
+  const dragStartRef = useRef<{ x: number; direction: FlipDirection } | null>(null)
+  const animFrameRef = useRef<number>(0)
+  const flipAngleRef = useRef(0)
   const isDraggingRef = useRef(false)
+  const currentPageRef = useRef(0)
+  const flipDirectionRef = useRef<FlipDirection | null>(null)
+
+  // Keep refs in sync with state
+  useEffect(() => { flipAngleRef.current = flipAngle }, [flipAngle])
+  useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
+  useEffect(() => { flipDirectionRef.current = flipDirection }, [flipDirection])
+  useEffect(() => { isDraggingRef.current = isDragging }, [isDragging])
 
   // ─── Check mobile ─────────────────────────────────
   useEffect(() => {
@@ -466,14 +495,9 @@ export default function Home() {
   const signaturePhotos = sortedPhotos.filter((p) => p.isSignature)
 
   // Build pages for the book
-  // Page 0: Cover
-  // Page 1: Welcome
-  // Pages 2..N: Photo pages (1 photo per page)
-  // Last-1: Signatures page
-  // Last: Back cover
-  const bookPages: { type: 'cover' | 'welcome' | 'photo' | 'signatures' | 'backcover'; photo?: Photo; allSignatures?: Photo[] }[] = []
+  const bookPages: BookPage[] = []
 
-  bookPages.push({ type: 'cover' })
+  bookPages.push({ type: 'cover', hard: true })
   bookPages.push({ type: 'welcome' })
 
   for (const photo of regularPhotos) {
@@ -485,29 +509,13 @@ export default function Home() {
   }
 
   bookPages.push({ type: 'signatures', allSignatures: signaturePhotos })
-  bookPages.push({ type: 'backcover' })
+  bookPages.push({ type: 'backcover', hard: true })
 
   const totalPages = bookPages.length
-
-  // On desktop, we show 2 pages side-by-side (spread view)
-  // On mobile, we show 1 page at a time
-  // currentPage is the LEFT page index on desktop, or the single page on mobile
-
-  const getSpreadPages = () => {
-    if (isMobile) {
-      return { left: bookPages[currentPage], right: null }
-    }
-    // Desktop: show 2 pages at a time
-    // Cover is special: only left side
-    const leftIdx = currentPage
-    const rightIdx = currentPage + 1
-    return {
-      left: bookPages[leftIdx],
-      right: rightIdx < totalPages ? bookPages[rightIdx] : null,
-    }
-  }
-
   const maxPage = isMobile ? totalPages - 1 : totalPages - 2
+
+  // ─── Helper: is a page index a hard cover? ─────────
+  const isHardPage = (idx: number) => idx === 0 || idx === totalPages - 1
 
   // ─── Fetch photos ──────────────────────────────────
   const fetchPhotos = useCallback(async () => {
@@ -532,112 +540,209 @@ export default function Home() {
     return () => { socket.disconnect(); if (pollingRef.current) clearInterval(pollingRef.current) }
   }, [fetchPhotos, toast])
 
-  // ─── Drag-to-Flip Logic ───────────────────────────
+  // ═══════════════════════════════════════════════════════
+  // FLIP ENGINE — requestAnimationFrame based animations
+  // ═══════════════════════════════════════════════════════
+
+  const animateToAngle = useCallback((
+    startAngle: number,
+    endAngle: number,
+    duration: number,
+    onComplete: () => void,
+  ) => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    const startTime = performance.now()
+    const animate = (now: number) => {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const angle = startAngle + (endAngle - startAngle) * eased
+      setFlipAngle(angle)
+      flipAngleRef.current = angle
+      if (progress < 1) {
+        animFrameRef.current = requestAnimationFrame(animate)
+      } else {
+        onComplete()
+      }
+    }
+    animFrameRef.current = requestAnimationFrame(animate)
+  }, [])
+
+  // Complete the flip: animate to 180° then update page
+  const completeFlip = useCallback((fromAngle: number, direction: FlipDirection) => {
+    setIsFlipping(true)
+    animateToAngle(fromAngle, 180, FLIP_COMPLETE_DURATION, () => {
+      setCurrentPage((prev) => {
+        if (direction === 'forward') return isMobile ? prev + 1 : prev + 2
+        return isMobile ? prev - 1 : prev - 2
+      })
+      setFlipAngle(0)
+      flipAngleRef.current = 0
+      setIsFlipping(false)
+      setFlipDirection(null)
+      setIsDragging(false)
+    })
+  }, [animateToAngle, isMobile])
+
+  // Spring back: animate to 0° and cancel
+  const springBack = useCallback((fromAngle: number) => {
+    setIsFlipping(true)
+    animateToAngle(fromAngle, 0, FLIP_SPRING_DURATION, () => {
+      setFlipAngle(0)
+      flipAngleRef.current = 0
+      setIsFlipping(false)
+      setFlipDirection(null)
+      setIsDragging(false)
+    })
+  }, [animateToAngle])
+
+  // Trigger a flip programmatically (keyboard, click)
+  const triggerFlip = useCallback((direction: FlipDirection) => {
+    if (isFlipping || isDragging) return
+    const cp = currentPageRef.current
+    if (direction === 'forward' && cp >= maxPage) return
+    if (direction === 'backward' && cp <= 0) return
+    setFlipDirection(direction)
+    flipDirectionRef.current = direction
+    completeFlip(0, direction)
+  }, [isFlipping, isDragging, maxPage, completeFlip])
+
+  // ─── Pointer handlers for drag-to-flip ─────────────
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (isFlipping) return
-    const target = e.currentTarget as HTMLDivElement
-    target.setPointerCapture(e.pointerId)
-    dragStartRef.current = { x: e.clientX, time: Date.now() }
+
+    // Don't flip if user clicked an interactive element
+    if (isInteractiveElement(e.target as HTMLElement)) return
+
+    const rect = bookContainerRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const x = e.clientX - rect.left
+    const relativeX = x / rect.width
+
+    // Determine direction based on where user clicked
+    const direction: FlipDirection = relativeX > 0.5 ? 'forward' : 'backward'
+
+    // Check if flip is possible
+    if (direction === 'forward' && currentPage >= maxPage) return
+    if (direction === 'backward' && currentPage <= 0) return
+
+    dragStartRef.current = { x: e.clientX, direction }
+    setFlipDirection(direction)
+    flipDirectionRef.current = direction
+    setFlipAngle(0)
+    flipAngleRef.current = 0
     isDraggingRef.current = false
-    setIsDragging(false)
-  }, [isFlipping])
+  }, [isFlipping, currentPage, maxPage])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragStartRef.current || isFlipping) return
-    const deltaX = dragStartRef.current.x - e.clientX
+
+    const startX = dragStartRef.current.x
+    const direction = dragStartRef.current.direction
     const container = bookContainerRef.current
     if (!container) return
 
     const pageWidth = isMobile ? container.offsetWidth : container.offsetWidth / 2
-    const absDelta = Math.abs(deltaX)
+    const deltaX = e.clientX - startX
 
-    if (absDelta > 5) {
+    // For forward: dragging left (negative deltaX) increases angle
+    // For backward: dragging right (positive deltaX) increases angle
+    let effectiveDelta = 0
+    if (direction === 'forward') {
+      effectiveDelta = -deltaX // positive when dragging left
+    } else {
+      effectiveDelta = deltaX // positive when dragging right
+    }
+
+    const angle = Math.max(0, Math.min(180, (effectiveDelta / pageWidth) * 180))
+
+    if (angle > DRAG_THRESHOLD && !isDraggingRef.current) {
       isDraggingRef.current = true
       setIsDragging(true)
+      // Capture pointer once drag starts
+      const target = e.currentTarget as HTMLDivElement
+      try { target.setPointerCapture(e.pointerId) } catch { /* */ }
     }
 
-    // Calculate flip angle based on drag direction and distance
-    let angle: number
-    if (deltaX > 0) {
-      // Dragging left = flipping forward (right page turns)
-      angle = Math.min((deltaX / pageWidth) * 180, 180)
-    } else {
-      // Dragging right = flipping backward (left page turns)
-      angle = Math.max((deltaX / pageWidth) * 180, -180)
+    if (isDraggingRef.current) {
+      setFlipAngle(angle)
+      flipAngleRef.current = angle
     }
-    setFlipAngle(angle)
   }, [isFlipping, isMobile])
 
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!dragStartRef.current || isFlipping) {
-      dragStartRef.current = null
-      setIsDragging(false)
-      setFlipAngle(0)
-      return
-    }
+  const handlePointerUp = useCallback((_e: React.PointerEvent) => {
+    if (!dragStartRef.current) return
 
-    const deltaX = dragStartRef.current.x - e.clientX
-    const container = bookContainerRef.current
+    const direction = dragStartRef.current.direction
     dragStartRef.current = null
 
     if (!isDraggingRef.current) {
-      setIsDragging(false)
-      setFlipAngle(0)
+      // It was a click (no significant drag) — trigger a flip
+      const cp = currentPageRef.current
+      if (direction === 'forward' && cp < maxPage) {
+        completeFlip(0, direction)
+      } else if (direction === 'backward' && cp > 0) {
+        completeFlip(0, direction)
+      } else {
+        setFlipDirection(null)
+        setFlipAngle(0)
+        flipAngleRef.current = 0
+      }
       return
     }
 
-    const pageWidth = container ? (isMobile ? container.offsetWidth : container.offsetWidth / 2) : 300
-    const absAngle = Math.abs(flipAngle)
-
-    if (absAngle > 90) {
-      // Past 50% threshold - complete the flip
-      setIsFlipping(true)
-      // Animate to completion
-      const targetAngle = deltaX > 0 ? 180 : -180
-      setFlipAngle(targetAngle)
-      setTimeout(() => {
-        if (deltaX > 0 && currentPage < maxPage) {
-          setCurrentPage(prev => isMobile ? prev + 1 : prev + 2)
-        } else if (deltaX < 0 && currentPage > 0) {
-          setCurrentPage(prev => isMobile ? prev - 1 : prev - 2)
-        }
-        setFlipAngle(0)
-        setIsFlipping(false)
-        setIsDragging(false)
-      }, FLIP_ANIM_DURATION)
+    // Was dragging — check threshold
+    const angle = flipAngleRef.current
+    if (angle > 90) {
+      completeFlip(angle, direction)
     } else {
-      // Spring back
-      setFlipAngle(0)
-      setTimeout(() => setIsDragging(false), 300)
+      springBack(angle)
     }
-  }, [isFlipping, currentPage, maxPage, flipAngle, isMobile])
+  }, [maxPage, completeFlip, springBack])
+
+  const handlePointerLeave = useCallback((_e: React.PointerEvent) => {
+    if (!dragStartRef.current) return
+    if (isDraggingRef.current) {
+      const angle = flipAngleRef.current
+      const direction = dragStartRef.current.direction
+      dragStartRef.current = null
+      if (angle > 90) {
+        completeFlip(angle, direction)
+      } else {
+        springBack(angle)
+      }
+    } else {
+      dragStartRef.current = null
+      setFlipDirection(null)
+      setFlipAngle(0)
+      flipAngleRef.current = 0
+    }
+  }, [completeFlip, springBack])
 
   // ─── Keyboard navigation ──────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (isFlipping) return
-      if (e.key === 'ArrowRight' && currentPage < maxPage) {
-        setIsFlipping(true)
-        setFlipAngle(180)
-        setTimeout(() => {
-          setCurrentPage(prev => isMobile ? prev + 1 : prev + 2)
-          setFlipAngle(0)
-          setIsFlipping(false)
-        }, FLIP_ANIM_DURATION)
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        triggerFlip('forward')
       }
-      if (e.key === 'ArrowLeft' && currentPage > 0) {
-        setIsFlipping(true)
-        setFlipAngle(-180)
-        setTimeout(() => {
-          setCurrentPage(prev => isMobile ? prev - 1 : prev - 2)
-          setFlipAngle(0)
-          setIsFlipping(false)
-        }, FLIP_ANIM_DURATION)
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        triggerFlip('backward')
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [isFlipping, currentPage, maxPage, isMobile])
+  }, [triggerFlip])
+
+  // ─── Cleanup animation frame on unmount ────────────
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    }
+  }, [])
 
   // ─── Upload handlers ──────────────────────────────
   const requestUpload = () => {
@@ -723,7 +828,10 @@ export default function Home() {
     return signaturePhotos.find((s) => s.signatureForPhotoId === photoId)
   }
 
-  // ─── Render Cover Page ─────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  // PAGE RENDERERS (preserved from original)
+  // ═══════════════════════════════════════════════════════
+
   const renderCover = () => (
     <div className="w-full h-full relative flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
@@ -750,7 +858,6 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render Welcome Page ───────────────────────────
   const renderWelcome = () => (
     <div className="w-full h-full page-texture flex flex-col items-center justify-center p-4 sm:p-6 relative"
       style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
@@ -774,7 +881,6 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render Photo Page ─────────────────────────────
   const renderPhotoPage = (photo?: Photo) => (
     <div className="w-full h-full page-texture flex flex-col relative"
       style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
@@ -788,7 +894,6 @@ export default function Home() {
       ) : (
         <div className="flex-1 flex flex-col p-2 sm:p-3 md:p-4 min-h-0">
           <div key={photo.id} className="flex-1 flex flex-col min-h-0 elegant-fade-in">
-            {/* Photo with frame */}
             <div className="flex-1 flex items-center justify-center min-h-0" style={{ maxHeight: '50%' }}>
               <PhotoFrame
                 src={photo.cloudinaryUrl} alt={`Foto de ${parseGuestData(photo.guestName, photo.frame, photo.message).name}`}
@@ -796,11 +901,9 @@ export default function Home() {
                 className="max-w-[92%] max-h-full"
               />
             </div>
-            {/* Guest name */}
             <p className="text-center text-[11px] sm:text-[13px] mt-1 italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
               — {parseGuestData(photo.guestName, photo.frame, photo.message).name}
             </p>
-            {/* Message */}
             {photo.message && (
               <>
                 <div className="my-0.5">
@@ -813,7 +916,6 @@ export default function Home() {
                 </div>
               </>
             )}
-            {/* Inline signature area */}
             <div className="mt-auto">
               <InlineSignatureArea
                 photoId={photo.id}
@@ -821,7 +923,6 @@ export default function Home() {
                 onSignatureSaved={fetchPhotos}
               />
             </div>
-            {/* Date */}
             <p className="text-[8px] sm:text-[10px] text-right mt-0.5 opacity-25" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
               {new Date(photo.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
             </p>
@@ -831,7 +932,6 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render Signatures Page ────────────────────────
   const renderSignaturesPage = (signatures?: Photo[]) => (
     <div className="w-full h-full page-texture flex flex-col items-center justify-center p-3 sm:p-4 relative"
       style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
@@ -862,7 +962,6 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render Back Cover ─────────────────────────────
   const renderBackCover = () => (
     <div className="w-full h-full relative flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
@@ -884,8 +983,7 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render a page by type ─────────────────────────
-  const renderPage = (page: typeof bookPages[0]) => {
+  const renderPage = (page: BookPage | null) => {
     if (!page) return <div className="w-full h-full" style={{ background: 'var(--wedding-ivory)' }} />
     switch (page.type) {
       case 'cover': return renderCover()
@@ -897,29 +995,69 @@ export default function Home() {
     }
   }
 
-  // ─── Build book spread view ────────────────────────
-  const spread = getSpreadPages()
+  // ═══════════════════════════════════════════════════════
+  // COMPUTED PAGES FOR FLIP RENDERING
+  // ═══════════════════════════════════════════════════════
 
-  // Flip angle for CSS transform
-  const flipTransform = isDragging
+  const isActive = isDragging || isFlipping
+  const isForward = flipDirection === 'forward'
+  const isBackward = flipDirection === 'backward'
+  const safeGet = (idx: number): BookPage | null => (idx >= 0 && idx < totalPages) ? bookPages[idx] : null
+
+  // ─── Desktop pages ─────────────────────────────────
+  const desktopLeftStatic = isActive && isForward
+    ? safeGet(currentPage)                           // forward: left stays until back covers it
+    : isActive && isBackward
+    ? safeGet(currentPage - 2)                       // backward: reveal previous left underneath
+    : safeGet(currentPage)                           // idle: current left
+
+  const desktopRightStatic = isActive && isForward
+    ? safeGet(currentPage + 3)                       // forward: reveal next right underneath
+    : isActive && isBackward
+    ? safeGet(currentPage + 1)                       // backward: right stays
+    : safeGet(currentPage + 1)                       // idle: current right
+
+  const desktopFrontFace = isForward
+    ? safeGet(currentPage + 1)                       // forward: current right flips away
+    : safeGet(currentPage)                           // backward: current left flips away
+
+  const desktopBackFace = isForward
+    ? safeGet(currentPage + 2)                       // forward: back = next left
+    : safeGet(currentPage - 1)                       // backward: back = previous right
+
+  // ─── Mobile pages ──────────────────────────────────
+  const mobileUnderPage = isForward
+    ? safeGet(currentPage + 1)                       // forward: next page underneath
+    : safeGet(currentPage - 1)                       // backward: previous page underneath
+
+  const mobileFrontFace = safeGet(currentPage)       // current page flips away
+
+  const mobileBackFace = isForward
+    ? safeGet(currentPage + 1)                       // forward: next page on back
+    : safeGet(currentPage - 1)                       // backward: previous page on back
+
+  // ─── Is the current flip a hard page? ──────────────
+  const isFlippingHard = isForward
+    ? isHardPage(currentPage + 1) || isHardPage(currentPage + 2)
+    : isHardPage(currentPage) || isHardPage(currentPage - 1)
+
+  // ─── Shadow intensity (0–1) ────────────────────────
+  const shadowIntensity = flipAngle / 180
+  const foldIntensity = Math.sin(flipAngle * Math.PI / 180) // peaks at 90°
+
+  // ─── CSS transform for the flipping page ───────────
+  const flipTransform = isForward
     ? `rotateY(${-flipAngle}deg)`
-    : isFlipping
-    ? `rotateY(${-flipAngle}deg)`
-    : 'rotateY(0deg)'
+    : `rotateY(${flipAngle}deg)`
 
-  const flipTransition = isDragging
-    ? 'none'
-    : isFlipping
-    ? `transform ${FLIP_ANIM_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
-    : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-
-  // Shadow intensity during flip
-  const shadowOpacity = Math.min(Math.abs(flipAngle) / 180, 1)
-
-  // Page indicator
+  // ─── Page indicator ────────────────────────────────
   const pageIndicator = isMobile
     ? `${currentPage + 1} / ${totalPages}`
     : `${currentPage + 1}-${Math.min(currentPage + 2, totalPages)} / ${totalPages}`
+
+  // ═══════════════════════════════════════════════════════
+  // MAIN RENDER
+  // ═══════════════════════════════════════════════════════
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #FFF9F0 0%, #F8F0FF 50%, #FFF9F0 100%)' }}>
@@ -963,131 +1101,118 @@ export default function Home() {
         ) : (
           <div
             ref={bookContainerRef}
-            className={`book-3d relative book-shadow rounded-sm ${isMobile ? 'w-full max-w-[420px]' : 'w-full max-w-[900px] lg:max-w-[1000px]'}`}
+            className={`book-container relative book-shadow rounded-sm ${isMobile ? 'w-full max-w-[420px]' : 'w-full max-w-[900px] lg:max-w-[1000px]'}`}
             style={{ height: isMobile ? '70vh' : '65vh', maxHeight: '600px', touchAction: 'none' }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
           >
-            {/* ─── Mobile: Single page view ─── */}
-            {isMobile && (
-              <>
-                {/* Current page (static) */}
-                <div className="absolute inset-0 rounded-sm overflow-hidden" style={{ zIndex: 1 }}>
-                  {renderPage(spread.left)}
-                </div>
-
-                {/* Flipping page (on top) */}
-                {(isDragging || isFlipping) && (
-                  <div
-                    ref={flipPageRef}
-                    className="flippable-page-mobile rounded-sm"
-                    style={{
-                      transform: flipTransform,
-                      transition: flipTransition,
-                      zIndex: 10,
-                    }}
-                  >
-                    {/* Front face */}
-                    <div className="page-face page-face-front rounded-sm overflow-hidden">
-                      {renderPage(spread.left)}
-                    </div>
-                    {/* Back face */}
-                    <div className="page-face page-face-back rounded-sm overflow-hidden">
-                      {flipAngle > 0 && (currentPage + 1 < totalPages)
-                        ? renderPage(bookPages[currentPage + 1])
-                        : flipAngle < 0 && (currentPage - 1 >= 0)
-                        ? renderPage(bookPages[currentPage - 1])
-                        : null
-                      }
-                    </div>
-                  </div>
-                )}
-
-                {/* Shadow during flip */}
-                {(isDragging || isFlipping) && (
-                  <div className="absolute inset-0 pointer-events-none rounded-sm" style={{
-                    zIndex: 5,
-                    background: 'rgba(45, 27, 61, 0.15)',
-                    opacity: shadowOpacity * 0.3,
-                  }} />
-                )}
-              </>
-            )}
-
-            {/* ─── Desktop: Spread view (left + right pages) ─── */}
+            {/* ═══ DESKTOP: Double-page spread ═══ */}
             {!isMobile && (
               <>
-                {/* Left page (static) */}
+                {/* Static left page */}
                 <div className="absolute left-0 top-0 w-1/2 h-full overflow-hidden rounded-l-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-left" />
-                  {renderPage(spread.left)}
+                  {renderPage(desktopLeftStatic)}
                 </div>
 
-                {/* Right page (static) */}
+                {/* Static right page (under flipping page) */}
                 <div className="absolute right-0 top-0 w-1/2 h-full overflow-hidden rounded-r-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-right" />
-                  {renderPage(spread.right)}
+                  {renderPage(desktopRightStatic)}
                 </div>
 
                 {/* Spine */}
                 <div className="book-spine" />
 
-                {/* Flipping page overlay (right side flips forward, left side flips backward) */}
-                {(isDragging || isFlipping) && flipAngle !== 0 && (
-                  <>
-                    <div
-                      ref={flipPageRef}
-                      className="flippable-page"
-                      style={{
-                        transform: flipTransform,
-                        transition: flipTransition,
-                        zIndex: 10,
-                      }}
-                    >
-                      {/* Front face: current right page */}
-                      <div className="page-face page-face-front overflow-hidden">
-                        {renderPage(spread.right)}
-                      </div>
-                      {/* Back face: next left page */}
-                      <div className="page-face page-face-back overflow-hidden">
-                        {flipAngle > 0 && (currentPage + 2 < totalPages)
-                          ? renderPage(bookPages[currentPage + 2])
-                          : flipAngle < 0 && (currentPage - 2 >= 0)
-                          ? renderPage(bookPages[currentPage - 1])
-                          : null
-                        }
-                      </div>
-                    </div>
-
-                    {/* Shadow on left page during forward flip */}
-                    {flipAngle > 0 && (
-                      <div className="flip-shadow-left" style={{
-                        opacity: shadowOpacity,
-                        transition: isDragging ? 'none' : 'opacity 0.3s ease',
-                      }} />
-                    )}
-
-                    {/* Shadow under flipping page */}
-                    <div className="flip-shadow" style={{
-                      opacity: shadowOpacity,
+                {/* ─── Flipping page ─── */}
+                {isActive && flipDirection && (
+                  <div
+                    className={`page-wrapper ${isFlippingHard ? 'hard-page' : 'sheet-page'}`}
+                    style={{
+                      left: isForward ? '50%' : 0,
                       width: '50%',
-                      transition: isDragging ? 'none' : 'opacity 0.3s ease',
-                    }} />
+                      transformOrigin: isForward ? 'left center' : 'right center',
+                      transform: flipTransform,
+                      zIndex: 10,
+                    }}
+                  >
+                    {/* Front face */}
+                    <div className="page-face page-face-front">
+                      {renderPage(desktopFrontFace)}
+                      {/* Light reflection during flip — simulates paper catching light */}
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.6 }} />
+                    </div>
+                    {/* Back face */}
+                    <div className="page-face page-face-back">
+                      {renderPage(desktopBackFace)}
+                    </div>
+                  </div>
+                )}
 
-                    {/* Depth shadow at spine */}
-                    <div className="flip-depth-shadow" style={{
-                      opacity: shadowOpacity * 0.8,
-                      transition: isDragging ? 'none' : 'opacity 0.3s ease',
-                    }} />
+                {/* ─── Dynamic shadows during flip ─── */}
+                {isActive && flipDirection && (
+                  <>
+                    {/* Shadow darkening the left page during forward flip */}
+                    {isForward && (
+                      <div className="flip-shadow-left" style={{ opacity: shadowIntensity * 0.8 }} />
+                    )}
+                    {/* Shadow darkening the right page during backward flip */}
+                    {isBackward && (
+                      <div className="flip-shadow-right" style={{ opacity: shadowIntensity * 0.8 }} />
+                    )}
+                    {/* Fold line shadow at spine */}
+                    <div
+                      className={`fold-shadow ${isFlippingHard ? 'hard-fold-shadow' : ''}`}
+                      style={{ opacity: foldIntensity * 0.9 }}
+                    />
                   </>
                 )}
               </>
             )}
 
-            {/* Drag hint overlay */}
-            {!isDragging && !isFlipping && currentPage === 0 && (
+            {/* ═══ MOBILE: Single page view ═══ */}
+            {isMobile && (
+              <>
+                {/* Static page underneath (revealed during flip, or current when idle) */}
+                <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ zIndex: 1 }}>
+                  {renderPage(isActive ? mobileUnderPage : safeGet(currentPage))}
+                </div>
+
+                {/* ─── Flipping page ─── */}
+                {isActive && flipDirection && (
+                  <div
+                    className={`page-wrapper ${isFlippingHard ? 'hard-page' : 'sheet-page'}`}
+                    style={{
+                      left: 0,
+                      width: '100%',
+                      transformOrigin: isForward ? 'left center' : 'right center',
+                      transform: flipTransform,
+                      zIndex: 10,
+                    }}
+                  >
+                    {/* Front face */}
+                    <div className="page-face page-face-front">
+                      {renderPage(mobileFrontFace)}
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.4 }} />
+                    </div>
+                    {/* Back face */}
+                    <div className="page-face page-face-back">
+                      {renderPage(mobileBackFace)}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── Shadow during flip ─── */}
+                {isActive && flipDirection && (
+                  <div className="mobile-flip-shadow" style={{ opacity: foldIntensity * 0.4 }} />
+                )}
+              </>
+            )}
+
+            {/* ─── Drag hint overlay ─── */}
+            {!isActive && currentPage === 0 && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -1120,15 +1245,14 @@ export default function Home() {
           </span>
           <div className="flex gap-1">
             {bookPages.map((_, i) => {
-              // Only show dots for key pages
-              if (i > 1 && i < totalPages - 1 && i % 2 !== 0 && isMobile) return null
-              if (i > 1 && i < totalPages - 1 && !isMobile && i % 2 !== 0) return null
+              // Show dots for key pages and spread boundaries
+              if (i > 1 && i < totalPages - 1 && i % 2 !== 0) return null
               return (
                 <button
                   key={i}
                   type="button"
                   onClick={() => {
-                    if (!isFlipping) {
+                    if (!isFlipping && !isDragging) {
                       const target = isMobile ? i : Math.max(0, i - (i % 2 === 0 ? 0 : 1))
                       setCurrentPage(Math.min(target, maxPage))
                     }
