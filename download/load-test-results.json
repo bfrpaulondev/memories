@@ -1,0 +1,53 @@
+{
+  "load_test": {
+    "photos_uploaded": 40,
+    "signatures_uploaded": 40,
+    "success_rate": "100%",
+    "photo_avg_time": "1.85s",
+    "signature_avg_time": "1.56s",
+    "photo_slowest": "3.35s",
+    "signature_slowest": "2.76s",
+    "all_cloudinary": true,
+    "total_elapsed_photos": "15.75s",
+    "total_elapsed_signatures": "13.68s"
+  },
+  "current_state": {
+    "total_photos": 164,
+    "regular_photos": 82,
+    "signatures": 82,
+    "cloudinary_count": 162,
+    "base64_count": 2,
+    "get_response_size_kb": 116.9
+  },
+  "concurrent_read_test": {
+    "simultaneous_guests": 10,
+    "avg_response_time": "2.70s",
+    "min_response_time": "0.83s",
+    "max_response_time": "3.37s",
+    "response_size_kb": 112.9
+  },
+  "projections_all_cloudinary": {
+    "200_photos": "~99 KB",
+    "500_photos": "~247 KB",
+    "1000_photos": "~494 KB"
+  },
+  "limits": {
+    "vercel_response_limit": "4MB (Hobby)",
+    "vercel_timeout": "10s (Hobby)",
+    "cloudinary_free_storage": "25 GB",
+    "mongodb_free_storage": "512 MB",
+    "mongodb_doc_limit": "16 MB"
+  },
+  "issues_found": [
+    "2 legacy base64 photos bloat GET response by 40KB (34% of total)",
+    "GET response grows linearly - no pagination",
+    "No caching on GET endpoint",
+    "Vercel cold starts can add 1-2s to first request"
+  ],
+  "recommendations": [
+    "Add pagination to GET /api/photos (e.g., 20 per page)",
+    "Migrate 2 base64 photos to Cloudinary",
+    "Add client-side caching (SWR/React Query)",
+    "Consider lazy-loading signatures"
+  ]
+}
