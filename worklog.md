@@ -179,3 +179,41 @@ Stage Summary:
 - Production URL: https://memories-wedding.vercel.app
 - Photo upload result: `https://res.cloudinary.com/dhsuwosfd/image/upload/v1778969819/wedding-album/ojko1b2lzbyf2bjzo5h6.png`
 - Signature upload result: `https://res.cloudinary.com/dhsuwosfd/image/upload/v1778969833/wedding-album/signatures/fdibzqncr6gl95pd6ipl.png`
+---
+Task ID: 7
+Agent: Main Agent
+Task: Redo flip effect with Framer Motion springs + change PIN to 2026 + add realistic book effects
+
+Work Log:
+- Changed PIN from 2025 to 2026 (code default: `process.env.NEXT_PUBLIC_WEDDING_PIN || '2026'`)
+- Replaced requestAnimationFrame-based flip engine with Framer Motion `animate()` function
+  - Complete flip: spring physics with stiffness=130, damping=20, mass=0.9 (natural book feel)
+  - Spring back: stiffness=260, damping=28, mass=0.7 (snappy return)
+- Removed old `animFrameRef` and `FLIP_COMPLETE_DURATION`/`FLIP_SPRING_DURATION` constants
+- Added `flipAnimationRef` for Framer Motion animation cleanup
+- Reduced drag threshold from 8 to 5 for more responsive feel
+- Added page corner peel hints (animated curl suggesting page can be turned)
+  - Right page: bottom-left corner peel (forward direction hint)
+  - Left page: bottom-right corner peel (backward direction hint)
+  - Subtle breathing animation with gold accent
+- Added page stacking effect (visible page edges like a real book)
+  - Right side edges for forward pages
+  - Left side edges for backward pages
+  - Mobile version with bottom-right stack
+- Added page bend gradient (simulates page curving near the spine during flip)
+- Added cast shadow (page shadow falling on the page beneath during flip)
+- Increased CSS perspective from 1500px to 1800px for better 3D depth
+- Added `will-change: transform` for GPU-accelerated flipping
+- Enhanced shadow intensities for more realistic book appearance
+- Updated CSS section title to "Premium Framer Motion Edition"
+- Build succeeds, deployed to Vercel via GitHub auto-deploy
+
+Stage Summary:
+- PIN is now 2026 (hardcoded default + env var)
+- Flip engine uses Framer Motion spring physics for fluid, natural page turning
+- Page corner peel hints animate to suggest page turning direction
+- Page stacking effect shows visible edges like a real book
+- Page bend gradients simulate paper curving near the spine
+- Cast shadows add depth during page flip
+- Production: https://memories-wedding.vercel.app
+- ⚠️ User should update `NEXT_PUBLIC_WEDDING_PIN` env var on Vercel from 2025 to 2026 (or remove it to use the code default)
