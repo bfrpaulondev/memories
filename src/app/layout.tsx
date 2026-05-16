@@ -14,18 +14,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ana & Pedro — Álbum de Fotos ao Vivo",
-  description: "Álbum de fotos virtual do casamento de Ana & Pedro. Envie e compartilhe seus melhores momentos!",
-  keywords: ["casamento", "álbum de fotos", "Ana & Pedro", "casamento digital"],
-  authors: [{ name: "Ana & Pedro" }],
+  title: "Patrícia & Samuel — Álbum de Fotos",
+  description: "Álbum de fotos virtual do casamento de Patrícia & Samuel. Envie e compartilhe seus melhores momentos!",
+  keywords: ["casamento", "álbum de fotos", "Patrícia & Samuel", "casamento digital"],
+  authors: [{ name: "Patrícia & Samuel" }],
   openGraph: {
-    title: "Ana & Pedro — Álbum de Fotos ao Vivo",
+    title: "Patrícia & Samuel — Álbum de Fotos",
     description: "Compartilhe seus melhores momentos do casamento!",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ana & Pedro — Álbum de Fotos ao Vivo",
+    title: "Patrícia & Samuel — Álbum de Fotos",
     description: "Compartilhe seus melhores momentos do casamento!",
   },
 };

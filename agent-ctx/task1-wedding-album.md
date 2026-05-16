@@ -1,85 +1,46 @@
-# Task 1: Wedding Virtual Photo Album
+# Task 1 - Wedding Virtual Photo Album Complete Redesign
 
 ## Summary
-Built a complete Wedding Virtual Photo Album web application with real-time updates, photo upload, and elegant wedding-themed design.
+Complete redesign of the wedding virtual photo album for Patrícia & Samuel with a purple theme, book-style layout, PIN protection, signature pad, and decorative frames.
 
 ## Changes Made
 
-### 1. Installed Dependencies
-- `socket.io-client` for WebSocket real-time communication
+### 1. `src/app/globals.css`
+- Replaced gold/cream theme with purple palette
+- Added CSS variables: `--wedding-purple`, `--wedding-lavender`, `--wedding-deep`, `--wedding-cream`, `--wedding-gold-accent`, etc.
+- Added custom CSS for: PIN digit inputs, frame styles (classic/floral/modern), book shadow, page texture, page edge effects, signature canvas, custom scrollbar
+- Updated all `:root` and `.dark` CSS variables for purple theme
 
-### 2. Updated `src/app/globals.css`
-- Changed color theme from default to wedding elegance:
-  - Primary: warm gold (#D4A574)
-  - Background: soft cream/ivory (#FFF9F0)
-  - Accents: rose/blush (#E8C4C4)
-  - Text: dark charcoal (#2D2D2D)
-- Added custom CSS variables: `--wedding-gold`, `--wedding-blush`, `--wedding-cream`, `--wedding-charcoal`, `--wedding-ivory`
-- Updated both light and dark mode themes
+### 2. `src/app/layout.tsx`
+- Updated metadata from "Ana & Pedro" to "Patrícia & Samuel"
+- Updated title, description, keywords, authors, OpenGraph, Twitter cards
 
-### 3. Updated `src/app/layout.tsx`
-- Changed metadata to Portuguese wedding theme
-- Updated title to "Ana & Pedro — Álbum de Fotos ao Vivo"
-- Changed lang from "en" to "pt-BR"
-- Removed external icon reference
+### 3. `src/app/page.tsx` (Complete Rewrite)
+- **Purple Wedding Theme**: All colors use CSS variables with purple palette
+- **PIN Protection**: 4-digit PIN modal (code: 2025) for upload access, stored in sessionStorage
+- **Book-Style Album**: Open book layout with left/right pages, book spine, page edges, paper texture
+- **Page Flip Animation**: CSS 3D perspective transforms with framer-motion AnimatePresence
+- **3 Decorative Frames**: Clássico (gold ornate), Floral (lavender soft), Moderno (minimal purple)
+- **Frame Selector**: Visual 3-option selector with preview in upload dialog
+- **Signature Page**: HTML5 Canvas with pointer events API for Apple Pencil, pressure sensitivity, 3 color options, clear/save buttons
+- **Upload Flow**: PIN-gated upload with guest name, frame selection, camera/file inputs, preview
+- **Cover Page**: Rich purple gradient with gold lettering, ornamental corners, couple names, date
+- **Back Cover**: Thank you message with mirrored cover design
+- **Grid View Toggle**: Switch between book view and masonry grid gallery
+- **Navigation**: Arrow buttons, swipe gestures, keyboard arrows, page indicator dots
+- **WebSocket**: Real-time photo updates via socket.io
+- **Photo Viewer**: Full-size photo dialog with download
+- **All text in Brazilian Portuguese**
 
-### 4. Built `src/app/page.tsx` (Main Application)
-Complete single-page application with:
+## Key Components
+- `PINModal` - 4-digit PIN entry with auto-submit, shake animation, error handling
+- `PhotoFrame` - 3 frame styles (classic/floral/modern) with CSS decorative elements
+- `FrameSelector` - Visual frame picker with check indicators
+- `SignaturePad` - Canvas drawing with pointer events, pressure sensitivity, color picker
+- Main `Home` component - Full album app with book/grid views, navigation, upload flow
 
-#### Hero Section
-- Gradient background with decorative elements
-- Couple names "Ana & Pedro" in elegant serif font
-- Decorative heart divider line
-- Subtitle "Álbum de Fotos ao Vivo" with sparkle icons
-- Live photo counter badge
-- Animated wave divider
-
-#### Upload Section
-- Guest name input with user icon
-- Two action buttons: "Tirar Foto" (camera capture) and "Enviar Foto" (file picker)
-- Image preview with file info overlay
-- Clear preview button
-- Upload button with loading spinner state
-- File type and size validation
-- Toast notifications for success/error
-
-#### Gallery Section
-- "Galeria de Fotos" heading with decorative dividers
-- CSS columns masonry layout (2 columns mobile, 3 desktop)
-- Each photo card shows: image, guest name, time ago
-- "Nova ✨" badge for newly arrived photos
-- Framer-motion fade-in animations
-- Loading state with spinner
-- Empty state with encouraging message
-- Click photo to open dialog with larger view
-
-#### Photo Dialog
-- Full-size image view
-- Guest name and timestamp
-- Download/save button for individual photos
-
-#### Admin Bar (Footer)
-- Sticky footer with "Feito com amor para Ana & Pedro"
-- "Baixar Todas as Fotos" button for batch download
-
-#### Real-time Features
-- WebSocket connection at `io("/?XTransformPort=3001")`
-- Listens for `photo_update` events
-- Toast notification on new photo arrival
-- Polling fallback every 10 seconds
-- New photo badges that auto-dismiss after 4 seconds
-
-#### Scroll to Top
-- Floating button appears after scrolling 400px
-- Smooth scroll to top behavior
-
-### 5. WebSocket Service
-- Already running on port 3001
-- Verified connectivity and broadcast functionality
-
-## Verification
-- `bun run lint` passes with no errors
-- Dev server compiles successfully
-- API routes respond correctly (GET /api/photos, POST /api/photos)
-- Page renders with correct HTML structure
-- All features implemented per requirements
+## API Integration
+- POST `/api/photos` - Upload with frame encoded in guestName (`Name|frame:classic`)
+- GET `/api/photos` - List all photos
+- WebSocket `/?XTransformPort=3001` - Real-time updates
+- Photos served at `/uploads/{filename}`

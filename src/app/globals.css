@@ -45,77 +45,81 @@
 
 :root {
   --radius: 0.75rem;
-  --background: #FFF9F0;
-  --foreground: #2D2D2D;
+  --background: #FBF7FF;
+  --foreground: #2D2040;
   --card: #FFFFFF;
-  --card-foreground: #2D2D2D;
+  --card-foreground: #2D2040;
   --popover: #FFFFFF;
-  --popover-foreground: #2D2D2D;
-  --primary: #D4A574;
+  --popover-foreground: #2D2040;
+  --primary: #8B5CF6;
   --primary-foreground: #FFFFFF;
-  --secondary: #F5EDE4;
-  --secondary-foreground: #2D2D2D;
-  --muted: #F5EDE4;
-  --muted-foreground: #8B7E74;
-  --accent: #E8C4C4;
-  --accent-foreground: #2D2D2D;
+  --secondary: #F3E8FF;
+  --secondary-foreground: #2D2040;
+  --muted: #F3E8FF;
+  --muted-foreground: #8B7E9E;
+  --accent: #E8D5F5;
+  --accent-foreground: #2D2040;
   --destructive: #E85D5D;
-  --border: #E8DDD0;
-  --input: #E8DDD0;
-  --ring: #D4A574;
-  --chart-1: #D4A574;
-  --chart-2: #E8C4C4;
-  --chart-3: #B8956A;
-  --chart-4: #D4B896;
-  --chart-5: #C9A0A0;
-  --sidebar: #FFF9F0;
-  --sidebar-foreground: #2D2D2D;
-  --sidebar-primary: #D4A574;
+  --border: #E8D5F5;
+  --input: #E8D5F5;
+  --ring: #8B5CF6;
+  --chart-1: #8B5CF6;
+  --chart-2: #7B2D8E;
+  --chart-3: #D4A574;
+  --chart-4: #C4B5FD;
+  --chart-5: #A78BFA;
+  --sidebar: #FBF7FF;
+  --sidebar-foreground: #2D2040;
+  --sidebar-primary: #8B5CF6;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F5EDE4;
-  --sidebar-accent-foreground: #2D2D2D;
-  --sidebar-border: #E8DDD0;
-  --sidebar-ring: #D4A574;
-  --wedding-gold: #D4A574;
+  --sidebar-accent: #F3E8FF;
+  --sidebar-accent-foreground: #2D2040;
+  --sidebar-border: #E8D5F5;
+  --sidebar-ring: #8B5CF6;
+  /* Wedding Purple Theme */
+  --wedding-purple: #8B5CF6;
+  --wedding-purple-dark: #7B2D8E;
+  --wedding-lavender: #E8D5F5;
+  --wedding-deep: #2D2040;
+  --wedding-cream: #FBF7FF;
+  --wedding-gold-accent: #D4A574;
   --wedding-gold-dark: #B8956A;
-  --wedding-blush: #E8C4C4;
-  --wedding-cream: #FFF9F0;
-  --wedding-charcoal: #2D2D2D;
-  --wedding-ivory: #F5EDE4;
+  --wedding-light-purple: #C4B5FD;
+  --wedding-soft-lavender: #F3E8FF;
 }
 
 .dark {
-  --background: #1A1612;
-  --foreground: #F5EDE4;
-  --card: #2A2420;
-  --card-foreground: #F5EDE4;
-  --popover: #2A2420;
-  --popover-foreground: #F5EDE4;
-  --primary: #D4A574;
-  --primary-foreground: #2D2D2D;
-  --secondary: #3A322C;
-  --secondary-foreground: #F5EDE4;
-  --muted: #3A322C;
-  --muted-foreground: #A89888;
-  --accent: #8B6060;
-  --accent-foreground: #F5EDE4;
+  --background: #1A1028;
+  --foreground: #F3E8FF;
+  --card: #2D1F40;
+  --card-foreground: #F3E8FF;
+  --popover: #2D1F40;
+  --popover-foreground: #F3E8FF;
+  --primary: #8B5CF6;
+  --primary-foreground: #FFFFFF;
+  --secondary: #3D2A54;
+  --secondary-foreground: #F3E8FF;
+  --muted: #3D2A54;
+  --muted-foreground: #A898B8;
+  --accent: #5B3A7E;
+  --accent-foreground: #F3E8FF;
   --destructive: #E85D5D;
-  --border: #3A322C;
-  --input: #3A322C;
-  --ring: #D4A574;
-  --chart-1: #D4A574;
-  --chart-2: #8B6060;
-  --chart-3: #B8956A;
-  --chart-4: #D4B896;
-  --chart-5: #C9A0A0;
-  --sidebar: #1A1612;
-  --sidebar-foreground: #F5EDE4;
-  --sidebar-primary: #D4A574;
-  --sidebar-primary-foreground: #2D2D2D;
-  --sidebar-accent: #3A322C;
-  --sidebar-accent-foreground: #F5EDE4;
-  --sidebar-border: #3A322C;
-  --sidebar-ring: #D4A574;
+  --border: #3D2A54;
+  --input: #3D2A54;
+  --ring: #8B5CF6;
+  --chart-1: #8B5CF6;
+  --chart-2: #A78BFA;
+  --chart-3: #D4A574;
+  --chart-4: #C4B5FD;
+  --chart-5: #7B2D8E;
+  --sidebar: #1A1028;
+  --sidebar-foreground: #F3E8FF;
+  --sidebar-primary: #8B5CF6;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #3D2A54;
+  --sidebar-accent-foreground: #F3E8FF;
+  --sidebar-border: #3D2A54;
+  --sidebar-ring: #8B5CF6;
 }
 
 @layer base {
@@ -125,4 +129,120 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Custom scrollbar for the album */
+.album-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.album-scroll::-webkit-scrollbar-track {
+  background: var(--wedding-cream);
+}
+.album-scroll::-webkit-scrollbar-thumb {
+  background: var(--wedding-lavender);
+  border-radius: 3px;
+}
+.album-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--wedding-purple);
+}
+
+/* Signature canvas cursor */
+.signature-canvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* Page texture effect */
+.page-texture {
+  background-image: 
+    linear-gradient(135deg, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+    linear-gradient(225deg, rgba(212, 165, 116, 0.03) 0%, transparent 50%);
+}
+
+/* Book shadow effect */
+.book-shadow {
+  box-shadow: 
+    -4px 0 8px -2px rgba(0, 0, 0, 0.1),
+    4px 0 8px -2px rgba(0, 0, 0, 0.1),
+    0 8px 24px -4px rgba(0, 0, 0, 0.15);
+}
+
+/* Page edge effect */
+.page-edge-left {
+  background: linear-gradient(to right, rgba(0,0,0,0.06) 0%, transparent 8%);
+}
+.page-edge-right {
+  background: linear-gradient(to left, rgba(0,0,0,0.06) 0%, transparent 8%);
+}
+
+/* PIN input styling */
+.pin-digit {
+  width: 52px;
+  height: 60px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  border: 2px solid var(--wedding-lavender);
+  border-radius: 12px;
+  background: white;
+  color: var(--wedding-deep);
+  transition: all 0.2s;
+  outline: none;
+}
+.pin-digit:focus {
+  border-color: var(--wedding-purple);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+/* Frame styles */
+.frame-classic {
+  border: 4px solid var(--wedding-gold-accent);
+  box-shadow: 
+    inset 0 0 0 2px var(--wedding-gold-dark),
+    inset 0 0 0 4px var(--wedding-gold-accent),
+    0 4px 12px rgba(0,0,0,0.15);
+  position: relative;
+}
+.frame-classic::before,
+.frame-classic::after {
+  content: '❧';
+  position: absolute;
+  font-size: 18px;
+  color: var(--wedding-gold-accent);
+  z-index: 2;
+}
+.frame-classic::before {
+  top: 4px;
+  left: 6px;
+}
+.frame-classic::after {
+  bottom: 4px;
+  right: 6px;
+  transform: rotate(180deg);
+}
+
+.frame-floral {
+  border: 3px solid var(--wedding-lavender);
+  border-radius: 16px;
+  box-shadow: 
+    inset 0 0 0 1px rgba(139, 92, 246, 0.1),
+    0 0 0 3px var(--wedding-soft-lavender),
+    0 0 0 5px rgba(139, 92, 246, 0.08),
+    0 4px 16px rgba(139, 92, 246, 0.15);
+  overflow: hidden;
+}
+
+.frame-modern {
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 
+    0 2px 8px rgba(0,0,0,0.08),
+    inset 0 -3px 0 0 var(--wedding-purple);
+  position: relative;
+}
+.frame-modern::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  pointer-events: none;
 }
