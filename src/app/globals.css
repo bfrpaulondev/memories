@@ -246,3 +246,180 @@
   border: 1px solid rgba(139, 92, 246, 0.1);
   pointer-events: none;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   3D Book Effects - Realistic Page Turn
+   ═══════════════════════════════════════════════════════════ */
+
+.book-3d {
+  perspective: 1200px;
+  perspective-origin: 50% 50%;
+}
+
+.book-page-left {
+  background-image: linear-gradient(to right, rgba(0,0,0,0.02) 0%, transparent 15%);
+}
+
+.book-page-right {
+  background-image: linear-gradient(to left, rgba(0,0,0,0.02) 0%, transparent 15%);
+}
+
+.flippable-page {
+  position: absolute;
+  right: 0;
+  width: 50%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  -webkit-transform-style: preserve-3d;
+  -webkit-transform-origin: left center;
+}
+
+.flippable-page-prev {
+  position: absolute;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform-origin: right center;
+  -webkit-transform-style: preserve-3d;
+  -webkit-transform-origin: right center;
+}
+
+.page-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.page-face-front {
+  transform: rotateY(0deg) translateZ(1px);
+  -webkit-transform: rotateY(0deg) translateZ(1px);
+}
+
+.page-face-back {
+  transform: rotateY(180deg) translateZ(1px);
+  -webkit-transform: rotateY(180deg) translateZ(1px);
+}
+
+/* Shadow under turning page */
+.flip-shadow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+  background: linear-gradient(to left, rgba(0,0,0,0.25) 0%, transparent 60%);
+  z-index: 5;
+  border-radius: 0 4px 4px 0;
+}
+
+.flip-shadow-active {
+  opacity: 1;
+  transition: opacity 0.9s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* Shadow on left page during flip */
+.flip-shadow-left {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+  background: linear-gradient(to right, transparent 40%, rgba(0,0,0,0.15) 100%);
+  z-index: 5;
+  border-radius: 4px 0 0 4px;
+}
+
+.flip-shadow-left-active {
+  opacity: 1;
+  transition: opacity 0.9s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* Spine shadow */
+.book-spine {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  transform: translateX(-50%);
+  background: linear-gradient(to right,
+    rgba(0,0,0,0.15) 0%,
+    rgba(0,0,0,0.05) 30%,
+    rgba(123,45,142,0.4) 50%,
+    rgba(0,0,0,0.05) 70%,
+    rgba(0,0,0,0.15) 100%
+  );
+  z-index: 100;
+  pointer-events: none;
+}
+
+.book-spine::before,
+.book-spine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  pointer-events: none;
+}
+
+.book-spine::before {
+  right: 100%;
+  background: linear-gradient(to left, rgba(0,0,0,0.08), transparent);
+}
+
+.book-spine::after {
+  left: 100%;
+  background: linear-gradient(to right, rgba(0,0,0,0.08), transparent);
+}
+
+/* Page edge gradient (spine side) for depth */
+.page-spine-edge-left {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.04) 100%);
+  z-index: 2;
+}
+
+.page-spine-edge-right {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  pointer-events: none;
+  background: linear-gradient(to left, transparent 0%, rgba(0,0,0,0.04) 100%);
+  z-index: 2;
+}
+
+/* Depth shadow that appears during page flip */
+.flip-depth-shadow {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.3) 0%, transparent 70%);
+  z-index: 3;
+}
+
+.flip-depth-shadow-active {
+  opacity: 1;
+  transition: opacity 0.9s cubic-bezier(0.645, 0.045, 0.355, 1);
+}

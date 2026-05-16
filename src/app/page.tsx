@@ -61,6 +61,7 @@ const WEDDING_PIN = '2025'
 const PHOTOS_PER_PAGE = 2
 const COUPLE_NAMES = 'Patrícia & Samuel'
 const WEDDING_DATE = '2025'
+const FLIP_DURATION = 900 // ms
 
 // ─── Utility: Parse guestName with frame info ────────────
 function parseGuestName(raw: string): ParsedGuest {
@@ -230,7 +231,6 @@ function PINModal({
   const [shaking, setShaking] = useState(false)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
-  // Focus first input on mount (component remounts via key when opening)
   useEffect(() => {
     const timer = setTimeout(() => inputRefs.current[0]?.focus(), 100)
     return () => clearTimeout(timer)
@@ -247,7 +247,6 @@ function PINModal({
       inputRefs.current[index + 1]?.focus()
     }
 
-    // Auto-check when all digits entered
     if (newPin.every((d) => d !== '')) {
       const entered = newPin.join('')
       if (entered === WEDDING_PIN) {
@@ -294,7 +293,6 @@ function PINModal({
             className="w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl"
             style={{ backgroundColor: 'white' }}
           >
-            {/* Lock icon */}
             <div
               className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
               style={{ backgroundColor: 'var(--wedding-soft-lavender)' }}
@@ -309,7 +307,6 @@ function PINModal({
               Para enviar fotos, insira o código
             </p>
 
-            {/* PIN digits */}
             <div className="flex justify-center gap-3 mb-4">
               {pin.map((digit, i) => (
                 <input
@@ -376,7 +373,6 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
         ctx.scale(dpr, dpr)
         ctx.fillStyle = '#FDFBF7'
         ctx.fillRect(0, 0, rect.width, rect.height)
-        // Draw subtle lines like paper
         ctx.strokeStyle = 'rgba(139, 92, 246, 0.08)'
         ctx.lineWidth = 0.5
         for (let y = 30; y < rect.height; y += 25) {
@@ -484,7 +480,6 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
 
   return (
     <div className="space-y-3">
-      {/* Canvas */}
       <div
         className="relative rounded-xl overflow-hidden shadow-inner"
         style={{ border: '2px solid var(--wedding-lavender)' }}
@@ -500,9 +495,7 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
         />
       </div>
 
-      {/* Tools */}
       <div className="flex items-center justify-between gap-2">
-        {/* Color selector */}
         <div className="flex gap-1.5">
           {colors.map((c) => (
             <button
@@ -523,7 +516,6 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
           ))}
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2">
           <Button
             type="button"
@@ -585,6 +577,8 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const socketRef = useRef<ReturnType<typeof io> | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const flipPageRef = useRef<HTMLDivElement>(null)
+  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ─── Check PIN on mount ────────────────────────────
   useEffect(() => {
@@ -595,13 +589,11 @@ export default function Home() {
   // ─── Compute album pages ───────────────────────────
   const sortedPhotos = [...photos].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-  // Split photos into pages (2 per page for nice layout)
   const photoPages: Photo[][] = []
   for (let i = 0; i < sortedPhotos.length; i += PHOTOS_PER_PAGE) {
     photoPages.push(sortedPhotos.slice(i, i + PHOTOS_PER_PAGE))
   }
 
-  // Signature photos (uploaded with "assinatura" in name or as signature type)
   const signaturePhotos = sortedPhotos.filter(
     (p) => p.originalName.startsWith('assinatura-') || p.guestName.includes('|signature')
   )
@@ -609,22 +601,15 @@ export default function Home() {
     (p) => !p.originalName.startsWith('assinatura-') && !p.guestName.includes('|signature')
   )
 
-  // Re-compute photo pages from regular photos
   const regularPhotoPages: Photo[][] = []
   for (let i = 0; i < regularPhotos.length; i += PHOTOS_PER_PAGE) {
     regularPhotoPages.push(regularPhotos.slice(i, i + PHOTOS_PER_PAGE))
   }
 
-  // Build spreads
-  // Spread 0: Cover (left: cover, right: welcome)
-  // Spreads 1..N: Photo pages (left page + right page)
-  // Spread N+1: Signatures
-  // Spread N+2: Back cover
   const totalSpreads = 2 + Math.max(1, Math.ceil(regularPhotoPages.length / 2)) + (signaturePhotos.length > 0 ? 1 : 0)
 
-  // Get photos for a specific page spread
   const getPhotosForSpread = (spreadIndex: number): { left: Photo[]; right: Photo[] } => {
-    if (spreadIndex === 0) return { left: [], right: [] } // Cover
+    if (spreadIndex === 0) return { left: [], right: [] }
     const photoSpreadIndex = spreadIndex - 1
     const leftPageIndex = photoSpreadIndex * 2
     const rightPageIndex = photoSpreadIndex * 2 + 1
@@ -634,11 +619,11 @@ export default function Home() {
     }
   }
 
-  const isSignatureSpread = (spreadIndex: number) => {
+  const isSignatureSpreadFn = (spreadIndex: number) => {
     return spreadIndex === totalSpreads - 2 && signaturePhotos.length > 0
   }
 
-  const isBackCover = (spreadIndex: number) => {
+  const isBackCoverFn = (spreadIndex: number) => {
     return spreadIndex === totalSpreads - 1
   }
 
@@ -690,20 +675,61 @@ export default function Home() {
     }
   }, [fetchPhotos, toast])
 
-  // ─── Navigation ────────────────────────────────────
-  const goToSpread = useCallback(
-    (index: number, direction: 'next' | 'prev') => {
-      if (isFlipping || index < 0 || index >= totalSpreads) return
-      setFlipDirection(direction)
-      setIsFlipping(true)
-      setCurrentSpread(index)
-      setTimeout(() => setIsFlipping(false), 700)
-    },
-    [isFlipping, totalSpreads]
-  )
+  // ─── 3D Flip Navigation ───────────────────────────
+  const performFlipNext = useCallback(() => {
+    if (isFlipping || currentSpread >= totalSpreads - 1) return
+    setFlipDirection('next')
+    setIsFlipping(true)
 
-  const nextPage = () => goToSpread(currentSpread + 1, 'next')
-  const prevPage = () => goToSpread(currentSpread - 1, 'prev')
+    // Flip overlay renders at rotateY(0deg), then we animate to -180deg
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = flipPageRef.current
+        if (el) {
+          el.style.transition = `transform ${FLIP_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
+          el.style.transform = 'rotateY(-180deg)'
+        }
+      })
+    })
+
+    if (flipTimeoutRef.current) clearTimeout(flipTimeoutRef.current)
+    flipTimeoutRef.current = setTimeout(() => {
+      setCurrentSpread(prev => prev + 1)
+      setIsFlipping(false)
+    }, FLIP_DURATION + 60)
+  }, [isFlipping, currentSpread, totalSpreads])
+
+  const performFlipPrev = useCallback(() => {
+    if (isFlipping || currentSpread <= 0) return
+    setFlipDirection('prev')
+    setIsFlipping(true)
+
+    // Flip overlay renders at rotateY(-180deg), then we animate to 0deg
+    requestAnimationFrame(() => {
+      const el = flipPageRef.current
+      if (el) {
+        // Force reflow to ensure the -180deg position is painted first
+        void el.offsetHeight
+        el.style.transition = `transform ${FLIP_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
+        el.style.transform = 'rotateY(0deg)'
+      }
+    })
+
+    if (flipTimeoutRef.current) clearTimeout(flipTimeoutRef.current)
+    flipTimeoutRef.current = setTimeout(() => {
+      setCurrentSpread(prev => prev - 1)
+      setIsFlipping(false)
+    }, FLIP_DURATION + 60)
+  }, [isFlipping, currentSpread])
+
+  const nextPage = performFlipNext
+  const prevPage = performFlipPrev
+
+  // For dot navigation - instant jump (no 3D flip for non-adjacent pages)
+  const goToSpread = useCallback((index: number) => {
+    if (isFlipping || index < 0 || index >= totalSpreads) return
+    setCurrentSpread(index)
+  }, [isFlipping, totalSpreads])
 
   // ─── Keyboard navigation ──────────────────────────
   useEffect(() => {
@@ -713,7 +739,7 @@ export default function Home() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [currentSpread, totalSpreads, isFlipping])
+  }, [nextPage, prevPage])
 
   // ─── Touch/swipe navigation ───────────────────────
   const touchStartRef = useRef<number | null>(null)
@@ -834,26 +860,7 @@ export default function Home() {
     }
   }
 
-  // ─── Page transition variants ─────────────────────
-  const pageVariants = {
-    enter: (direction: 'next' | 'prev') => ({
-      x: direction === 'next' ? 80 : -80,
-      opacity: 0,
-      rotateY: direction === 'next' ? 5 : -5,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-      rotateY: 0,
-    },
-    exit: (direction: 'next' | 'prev') => ({
-      x: direction === 'next' ? -80 : 80,
-      opacity: 0,
-      rotateY: direction === 'next' ? -5 : 5,
-    }),
-  }
-
-  // ─── Render single page content ───────────────────
+  // ─── Render single page content (photo pages) ────
   const renderPageContent = (pagePhotos: Photo[], side: 'left' | 'right') => (
     <div
       className={`w-full h-full page-texture flex flex-col items-center justify-center p-4 relative ${
@@ -864,7 +871,6 @@ export default function Home() {
         borderRadius: side === 'left' ? '4px 0 0 4px' : '0 4px 4px 0',
       }}
     >
-      {/* Decorative corner */}
       <OrnamentalCorner
         className={`absolute ${side === 'left' ? 'top-2 left-2' : 'top-2 right-2'} opacity-30`}
       />
@@ -916,333 +922,305 @@ export default function Home() {
     </div>
   )
 
-  // ─── Render book spread ───────────────────────────
-  const renderSpread = (spreadIndex: number) => {
-    // Cover spread
+  // ─── Render LEFT half of any spread ───────────────
+  const renderLeftHalf = (spreadIndex: number) => {
+    // Cover left
     if (spreadIndex === 0) {
       return (
-        <div className="flex w-full h-full book-shadow rounded-lg overflow-hidden" style={{ perspective: '1500px' }}>
-          {/* Left - Cover */}
-          <div
-            className="w-1/2 relative flex flex-col items-center justify-center p-6 overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #7B2D8E 0%, #5B1F6E 40%, #3D1452 100%)',
-              borderRadius: '8px 0 0 8px',
-            }}
-          >
-            {/* Decorative border */}
-            <div className="absolute inset-3 border border-[var(--wedding-gold-accent)] opacity-30 rounded-sm" />
-            <div className="absolute inset-5 border border-[var(--wedding-gold-accent)] opacity-15 rounded-sm" />
+        <div
+          className="w-full h-full relative flex flex-col items-center justify-center p-6 overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, #7B2D8E 0%, #5B1F6E 40%, #3D1452 100%)',
+            borderRadius: '8px 0 0 8px',
+          }}
+        >
+          <div className="absolute inset-3 border border-[var(--wedding-gold-accent)] opacity-30 rounded-sm" />
+          <div className="absolute inset-5 border border-[var(--wedding-gold-accent)] opacity-15 rounded-sm" />
+          <div className="absolute top-5 left-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg">❧</div>
+          <div className="absolute top-5 right-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scaleX(-1)' }}>❧</div>
+          <div className="absolute bottom-5 left-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scaleY(-1)' }}>❧</div>
+          <div className="absolute bottom-5 right-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scale(-1)' }}>❧</div>
 
-            {/* Ornamental corners */}
-            <div className="absolute top-5 left-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg">❧</div>
-            <div className="absolute top-5 right-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scaleX(-1)' }}>❧</div>
-            <div className="absolute bottom-5 left-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scaleY(-1)' }}>❧</div>
-            <div className="absolute bottom-5 right-5 text-[var(--wedding-gold-accent)] opacity-50 text-lg" style={{ transform: 'scale(-1)' }}>❧</div>
-
-            {/* Content */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-              className="relative z-10 text-center"
+          <div className="relative z-10 text-center">
+            <div className="mb-3"><span className="text-4xl">💍</span></div>
+            <h1
+              className="text-3xl sm:text-4xl font-bold mb-2"
+              style={{
+                color: 'var(--wedding-gold-accent)',
+                fontFamily: 'Georgia, "Times New Roman", serif',
+                textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              }}
             >
-              <div className="mb-3">
-                <span className="text-4xl">💍</span>
-              </div>
-              <h1
-                className="text-3xl sm:text-4xl font-bold mb-2"
-                style={{
-                  color: 'var(--wedding-gold-accent)',
-                  fontFamily: 'Georgia, "Times New Roman", serif',
-                  textShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                }}
-              >
-                Patrícia
-              </h1>
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="h-px w-12" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.5 }} />
-                <Heart className="w-4 h-4 fill-current" style={{ color: 'var(--wedding-gold-accent)' }} />
-                <div className="h-px w-12" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.5 }} />
-              </div>
-              <h1
-                className="text-3xl sm:text-4xl font-bold mb-3"
-                style={{
-                  color: 'var(--wedding-gold-accent)',
-                  fontFamily: 'Georgia, "Times New Roman", serif',
-                  textShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                }}
-              >
-                Samuel
-              </h1>
-              <p className="text-sm tracking-widest" style={{ color: 'rgba(212,165,116,0.7)', fontFamily: 'Georgia, serif' }}>
-                {WEDDING_DATE}
-              </p>
-            </motion.div>
-          </div>
-
-          {/* Right - Welcome */}
-          <div
-            className="w-1/2 page-texture flex flex-col items-center justify-center p-6 page-edge-right relative"
-            style={{
-              background: 'linear-gradient(to left, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '0 8px 8px 0',
-            }}
-          >
-            <OrnamentalCorner className="absolute top-3 right-3 opacity-30" />
-            <OrnamentalCorner className="absolute bottom-3 right-3 opacity-30 rotate-180" />
-
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              className="text-center max-w-[90%]"
+              Patrícia
+            </h1>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <div className="h-px w-12" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.5 }} />
+              <Heart className="w-4 h-4 fill-current" style={{ color: 'var(--wedding-gold-accent)' }} />
+              <div className="h-px w-12" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.5 }} />
+            </div>
+            <h1
+              className="text-3xl sm:text-4xl font-bold mb-3"
+              style={{
+                color: 'var(--wedding-gold-accent)',
+                fontFamily: 'Georgia, "Times New Roman", serif',
+                textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              }}
             >
-              <Sparkles className="w-6 h-6 mx-auto mb-3" style={{ color: 'var(--wedding-purple)' }} />
-              <h2
-                className="text-xl font-bold mb-3"
-                style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}
-              >
-                Bem-vindos ao nosso álbum!
-              </h2>
-              <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
-                Este álbum foi criado com amor para guardar os melhores momentos do nosso dia especial.
-              </p>
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
-                <span className="text-xs" style={{ color: 'var(--wedding-purple)' }}>💜</span>
-                <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
-              </div>
-              <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                Envie suas fotos e deixe sua mensagem nas páginas seguintes
-              </p>
-
-              {/* Photo count */}
-              <div className="mt-4">
-                <Badge
-                  className="px-3 py-1 rounded-full"
-                  style={{ backgroundColor: 'var(--wedding-soft-lavender)', color: 'var(--wedding-purple-dark)' }}
-                >
-                  <ImageIcon className="w-3 h-3 mr-1" />
-                  {regularPhotos.length} {regularPhotos.length === 1 ? 'foto' : 'fotos'} no álbum
-                </Badge>
-              </div>
-            </motion.div>
+              Samuel
+            </h1>
+            <p className="text-sm tracking-widest" style={{ color: 'rgba(212,165,116,0.7)', fontFamily: 'Georgia, serif' }}>
+              {WEDDING_DATE}
+            </p>
           </div>
         </div>
       )
     }
 
-    // Signature spread
-    if (isSignatureSpread(spreadIndex)) {
+    // Signature left
+    if (isSignatureSpreadFn(spreadIndex)) {
       return (
-        <div className="flex w-full h-full book-shadow rounded-lg overflow-hidden">
-          {/* Left - Signature pad */}
-          <div
-            className="w-1/2 page-texture flex flex-col p-4 page-edge-left relative"
-            style={{
-              background: 'linear-gradient(to right, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '4px 0 0 4px',
-            }}
-          >
-            <OrnamentalCorner className="absolute top-2 left-2 opacity-30" />
-
-            <div className="text-center mb-2">
-              <Paintbrush className="w-5 h-5 mx-auto mb-1" style={{ color: 'var(--wedding-purple)' }} />
-              <h3 className="text-sm font-bold" style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}>
-                Deixe sua mensagem
-              </h3>
-            </div>
-
-            {/* Guest name for signature */}
-            <div className="mb-2">
-              <div className="relative">
-                <Users className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3" style={{ color: 'var(--wedding-purple)' }} />
-                <Input
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="Seu nome"
-                  className="pl-7 h-8 text-xs rounded-lg"
-                  style={{ borderColor: 'var(--wedding-lavender)', backgroundColor: 'white' }}
-                  maxLength={50}
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0">
-              <SignaturePad onSave={handleSignatureSave} />
+        <div
+          className="w-full h-full page-texture flex flex-col p-4 page-edge-left relative"
+          style={{
+            background: 'linear-gradient(to right, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
+            borderRadius: '4px 0 0 4px',
+          }}
+        >
+          <OrnamentalCorner className="absolute top-2 left-2 opacity-30" />
+          <div className="text-center mb-2">
+            <Paintbrush className="w-5 h-5 mx-auto mb-1" style={{ color: 'var(--wedding-purple)' }} />
+            <h3 className="text-sm font-bold" style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}>
+              Deixe sua mensagem
+            </h3>
+          </div>
+          <div className="mb-2">
+            <div className="relative">
+              <Users className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3" style={{ color: 'var(--wedding-purple)' }} />
+              <Input
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                placeholder="Seu nome"
+                className="pl-7 h-8 text-xs rounded-lg"
+                style={{ borderColor: 'var(--wedding-lavender)', backgroundColor: 'white' }}
+                maxLength={50}
+              />
             </div>
           </div>
-
-          {/* Right - Saved signatures */}
-          <div
-            className="w-1/2 page-texture flex flex-col p-4 page-edge-right relative"
-            style={{
-              background: 'linear-gradient(to left, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '0 4px 4px 0',
-            }}
-          >
-            <OrnamentalCorner className="absolute top-2 right-2 opacity-30" />
-
-            <div className="text-center mb-2">
-              <Pen className="w-5 h-5 mx-auto mb-1" style={{ color: 'var(--wedding-purple)' }} />
-              <h3 className="text-sm font-bold" style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}>
-                Assinaturas dos Convidados
-              </h3>
-            </div>
-
-            <div className="flex-1 overflow-y-auto album-scroll space-y-2">
-              {signaturePhotos.length === 0 ? (
-                <div className="text-center py-8 opacity-40">
-                  <Pen className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--wedding-lavender)' }} />
-                  <p className="text-xs italic" style={{ color: 'var(--muted-foreground)' }}>
-                    Nenhuma assinatura ainda
-                  </p>
-                </div>
-              ) : (
-                signaturePhotos.map((photo) => {
-                  const p = parseGuestName(photo.guestName)
-                  return (
-                    <div key={photo.id} className="rounded-lg overflow-hidden shadow-sm" style={{ border: '1px solid var(--wedding-lavender)' }}>
-                      <img
-                        src={`/uploads/${photo.filename}`}
-                        alt={`Assinatura de ${p.name}`}
-                        className="w-full object-contain"
-                        style={{ maxHeight: '100px', background: '#FDFBF7' }}
-                        loading="lazy"
-                      />
-                      {p.name !== 'Convidado' && (
-                        <p className="text-[10px] text-center py-1 italic" style={{ color: 'var(--wedding-purple-dark)' }}>
-                          — {p.name}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
+          <div className="flex-1 min-h-0">
+            <SignaturePad onSave={handleSignatureSave} />
           </div>
         </div>
       )
     }
 
-    // Back cover
-    if (isBackCover(spreadIndex)) {
+    // Back cover left
+    if (isBackCoverFn(spreadIndex)) {
       return (
-        <div className="flex w-full h-full book-shadow rounded-lg overflow-hidden">
-          {/* Left - Thank you */}
-          <div
-            className="w-1/2 page-texture flex flex-col items-center justify-center p-6 page-edge-left relative"
-            style={{
-              background: 'linear-gradient(to right, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '4px 0 0 4px',
-            }}
-          >
-            <OrnamentalCorner className="absolute top-3 left-3 opacity-30" />
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.8 }}
-              className="text-center"
+        <div
+          className="w-full h-full page-texture flex flex-col items-center justify-center p-6 page-edge-left relative"
+          style={{
+            background: 'linear-gradient(to right, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
+            borderRadius: '4px 0 0 4px',
+          }}
+        >
+          <OrnamentalCorner className="absolute top-3 left-3 opacity-30" />
+          <div className="text-center">
+            <div className="mb-3"><span className="text-3xl">💜</span></div>
+            <h2
+              className="text-2xl font-bold mb-3"
+              style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}
             >
-              <div className="mb-3">
-                <span className="text-3xl">💜</span>
-              </div>
-              <h2
-                className="text-2xl font-bold mb-3"
-                style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}
-              >
-                Obrigado!
-              </h2>
-              <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--muted-foreground)' }}>
-                Agradecemos a todos que fizeram parte deste momento especial.
-              </p>
-              <div className="flex items-center justify-center gap-2 my-3">
-                <div className="h-px w-10" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
-                <Heart className="w-3 h-3 fill-current" style={{ color: 'var(--wedding-purple)' }} />
-                <div className="h-px w-10" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
-              </div>
-              <p className="text-xs italic" style={{ color: 'var(--wedding-purple-dark)', fontFamily: 'Georgia, serif' }}>
-                Com amor,<br />Patrícia & Samuel
-              </p>
-            </motion.div>
-          </div>
-
-          {/* Right - Back cover */}
-          <div
-            className="w-1/2 relative flex flex-col items-center justify-center p-6 overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #7B2D8E 0%, #5B1F6E 40%, #3D1452 100%)',
-              borderRadius: '0 8px 8px 0',
-            }}
-          >
-            <div className="absolute inset-3 border border-[var(--wedding-gold-accent)] opacity-20 rounded-sm" />
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.4 }} />
-                <span className="text-xl">💍</span>
-                <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.4 }} />
-              </div>
-              <p className="text-xs tracking-[0.3em] uppercase" style={{ color: 'rgba(212,165,116,0.6)', fontFamily: 'Georgia, serif' }}>
-                Patrícia & Samuel
-              </p>
-              <p className="text-xs mt-2" style={{ color: 'rgba(212,165,116,0.4)' }}>
-                {WEDDING_DATE}
-              </p>
+              Obrigado!
+            </h2>
+            <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--muted-foreground)' }}>
+              Agradecemos a todos que fizeram parte deste momento especial.
+            </p>
+            <div className="flex items-center justify-center gap-2 my-3">
+              <div className="h-px w-10" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
+              <Heart className="w-3 h-3 fill-current" style={{ color: 'var(--wedding-purple)' }} />
+              <div className="h-px w-10" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
             </div>
+            <p className="text-xs italic" style={{ color: 'var(--wedding-purple-dark)', fontFamily: 'Georgia, serif' }}>
+              Com amor,<br />Patrícia & Samuel
+            </p>
           </div>
         </div>
       )
     }
 
-    // Photo spread
-    const { left, right } = getPhotosForSpread(spreadIndex)
-    const hasPhotos = left.length > 0 || right.length > 0
-
-    if (!hasPhotos) {
-      // Empty photo spread placeholder
-      return (
-        <div className="flex w-full h-full book-shadow rounded-lg overflow-hidden">
-          <div
-            className="w-1/2 page-texture flex flex-col items-center justify-center p-4 page-edge-left"
-            style={{
-              background: 'linear-gradient(to right, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '4px 0 0 4px',
-            }}
-          >
-            <div className="text-center opacity-30">
-              <ImageIcon className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--wedding-lavender)' }} />
-              <p className="text-xs italic" style={{ color: 'var(--muted-foreground)', fontFamily: 'Georgia, serif' }}>
-                Aguardando fotos...
-              </p>
-            </div>
-          </div>
-          <div
-            className="w-1/2 page-texture flex flex-col items-center justify-center p-4 page-edge-right"
-            style={{
-              background: 'linear-gradient(to left, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
-              borderRadius: '0 4px 4px 0',
-            }}
-          >
-            <div className="text-center opacity-30">
-              <Camera className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--wedding-lavender)' }} />
-              <p className="text-xs italic" style={{ color: 'var(--muted-foreground)', fontFamily: 'Georgia, serif' }}>
-                Envie suas fotos!
-              </p>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div className="flex w-full h-full book-shadow rounded-lg overflow-hidden">
-        {renderPageContent(left, 'left')}
-        {renderPageContent(right, 'right')}
-      </div>
-    )
+    // Photo spread left
+    const { left } = getPhotosForSpread(spreadIndex)
+    return renderPageContent(left, 'left')
   }
+
+  // ─── Render RIGHT half of any spread ──────────────
+  const renderRightHalf = (spreadIndex: number) => {
+    // Cover right
+    if (spreadIndex === 0) {
+      return (
+        <div
+          className="w-full h-full page-texture flex flex-col items-center justify-center p-6 page-edge-right relative"
+          style={{
+            background: 'linear-gradient(to left, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
+            borderRadius: '0 8px 8px 0',
+          }}
+        >
+          <OrnamentalCorner className="absolute top-3 right-3 opacity-30" />
+          <OrnamentalCorner className="absolute bottom-3 right-3 opacity-30 rotate-180" />
+          <div className="text-center max-w-[90%]">
+            <Sparkles className="w-6 h-6 mx-auto mb-3" style={{ color: 'var(--wedding-purple)' }} />
+            <h2
+              className="text-xl font-bold mb-3"
+              style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}
+            >
+              Bem-vindos ao nosso álbum!
+            </h2>
+            <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
+              Este álbum foi criado com amor para guardar os melhores momentos do nosso dia especial.
+            </p>
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
+              <span className="text-xs" style={{ color: 'var(--wedding-purple)' }}>💜</span>
+              <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              Envie suas fotos e deixe sua mensagem nas páginas seguintes
+            </p>
+            <div className="mt-4">
+              <Badge
+                className="px-3 py-1 rounded-full"
+                style={{ backgroundColor: 'var(--wedding-soft-lavender)', color: 'var(--wedding-purple-dark)' }}
+              >
+                <ImageIcon className="w-3 h-3 mr-1" />
+                {regularPhotos.length} {regularPhotos.length === 1 ? 'foto' : 'fotos'} no álbum
+              </Badge>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // Signature right
+    if (isSignatureSpreadFn(spreadIndex)) {
+      return (
+        <div
+          className="w-full h-full page-texture flex flex-col p-4 page-edge-right relative"
+          style={{
+            background: 'linear-gradient(to left, rgba(0,0,0,0.03) 0%, transparent 10%), linear-gradient(135deg, #FDFBF7 0%, #F8F0FF 100%)',
+            borderRadius: '0 4px 4px 0',
+          }}
+        >
+          <OrnamentalCorner className="absolute top-2 right-2 opacity-30" />
+          <div className="text-center mb-2">
+            <Pen className="w-5 h-5 mx-auto mb-1" style={{ color: 'var(--wedding-purple)' }} />
+            <h3 className="text-sm font-bold" style={{ color: 'var(--wedding-deep)', fontFamily: 'Georgia, serif' }}>
+              Assinaturas dos Convidados
+            </h3>
+          </div>
+          <div className="flex-1 overflow-y-auto album-scroll space-y-2">
+            {signaturePhotos.length === 0 ? (
+              <div className="text-center py-8 opacity-40">
+                <Pen className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--wedding-lavender)' }} />
+                <p className="text-xs italic" style={{ color: 'var(--muted-foreground)' }}>
+                  Nenhuma assinatura ainda
+                </p>
+              </div>
+            ) : (
+              signaturePhotos.map((photo) => {
+                const p = parseGuestName(photo.guestName)
+                return (
+                  <div key={photo.id} className="rounded-lg overflow-hidden shadow-sm" style={{ border: '1px solid var(--wedding-lavender)' }}>
+                    <img
+                      src={`/uploads/${photo.filename}`}
+                      alt={`Assinatura de ${p.name}`}
+                      className="w-full object-contain"
+                      style={{ maxHeight: '100px', background: '#FDFBF7' }}
+                      loading="lazy"
+                    />
+                    {p.name !== 'Convidado' && (
+                      <p className="text-[10px] text-center py-1 italic" style={{ color: 'var(--wedding-purple-dark)' }}>
+                        — {p.name}
+                      </p>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // Back cover right
+    if (isBackCoverFn(spreadIndex)) {
+      return (
+        <div
+          className="w-full h-full relative flex flex-col items-center justify-center p-6 overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, #7B2D8E 0%, #5B1F6E 40%, #3D1452 100%)',
+            borderRadius: '0 8px 8px 0',
+          }}
+        >
+          <div className="absolute inset-3 border border-[var(--wedding-gold-accent)] opacity-20 rounded-sm" />
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.4 }} />
+              <span className="text-xl">💍</span>
+              <div className="h-px w-8" style={{ backgroundColor: 'var(--wedding-gold-accent)', opacity: 0.4 }} />
+            </div>
+            <p className="text-xs tracking-[0.3em] uppercase" style={{ color: 'rgba(212,165,116,0.6)', fontFamily: 'Georgia, serif' }}>
+              Patrícia & Samuel
+            </p>
+            <p className="text-xs mt-2" style={{ color: 'rgba(212,165,116,0.4)' }}>
+              {WEDDING_DATE}
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    // Photo spread right
+    const { right } = getPhotosForSpread(spreadIndex)
+    return renderPageContent(right, 'right')
+  }
+
+  // ─── Compute spread data for 3D flip rendering ────
+  // During flip, we need content from adjacent spreads
+  const getFlipData = () => {
+    if (!isFlipping) {
+      return {
+        baseLeftSpread: currentSpread,
+        baseRightSpread: currentSpread,
+        flipFrontSpread: -1, // not used
+        flipBackSpread: -1,  // not used
+        showFlipOverlay: false,
+        initialFlipAngle: 0,
+      }
+    }
+
+    if (flipDirection === 'next') {
+      return {
+        baseLeftSpread: currentSpread,
+        baseRightSpread: currentSpread + 1,
+        flipFrontSpread: currentSpread,       // front face = current right page
+        flipBackSpread: currentSpread + 1,     // back face = next left page
+        showFlipOverlay: true,
+        initialFlipAngle: 0, // starts at 0, animates to -180
+      }
+    }
+
+    // prev
+    return {
+      baseLeftSpread: currentSpread - 1,
+      baseRightSpread: currentSpread,
+      flipFrontSpread: currentSpread - 1,      // front face = prev right page
+      flipBackSpread: currentSpread,            // back face = current left page
+      showFlipOverlay: true,
+      initialFlipAngle: -180, // starts at -180, animates to 0
+    }
+  }
+
+  const flipData = getFlipData()
 
   // ─── Grid View ────────────────────────────────────
   const renderGridView = () => (
@@ -1316,7 +1294,6 @@ export default function Home() {
         style={{ backgroundColor: 'rgba(251,247,255,0.9)', borderColor: 'var(--wedding-lavender)' }}
       >
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
-          {/* Title */}
           <div className="flex items-center gap-2">
             <Heart className="w-4 h-4 fill-current" style={{ color: 'var(--wedding-purple)' }} />
             <h1
@@ -1327,7 +1304,6 @@ export default function Home() {
             </h1>
           </div>
 
-          {/* Controls */}
           <div className="flex items-center gap-2">
             {/* View toggle */}
             <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--wedding-lavender)' }}>
@@ -1359,7 +1335,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Upload button */}
             <Button
               onClick={requestUpload}
               size="sm"
@@ -1371,7 +1346,6 @@ export default function Home() {
               <span className="sm:hidden">Foto</span>
             </Button>
 
-            {/* Download */}
             <Button
               onClick={downloadAllPhotos}
               variant="outline"
@@ -1390,49 +1364,97 @@ export default function Home() {
       {/* ═══════════ MAIN CONTENT ═══════════ */}
       <main className="flex-1 flex flex-col">
         {viewMode === 'book' ? (
-          /* ═══════════ BOOK VIEW ═══════════ */
+          /* ═══════════ 3D BOOK VIEW ═══════════ */
           <div className="flex-1 flex flex-col items-center justify-center p-3 sm:p-4 md:p-6">
-            {/* Book container */}
+            {/* 3D Book Container */}
             <div
-              className="w-full max-w-4xl relative"
+              className="w-full max-w-4xl relative book-3d book-shadow rounded-lg overflow-hidden"
               style={{
-                height: viewMode === 'book' ? 'calc(100vh - 140px)' : 'auto',
+                height: 'calc(100vh - 140px)',
                 minHeight: '400px',
-                perspective: '2000px',
+                touchAction: 'manipulation',
               }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Book spine */}
+              {/* ─── Base Left Page ─── */}
               <div
-                className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 z-20 w-3 pointer-events-none"
-                style={{
-                  background: 'linear-gradient(to right, rgba(0,0,0,0.15), rgba(123,45,142,0.6), rgba(0,0,0,0.15))',
-                  boxShadow: '0 0 8px rgba(0,0,0,0.2)',
-                }}
+                className="absolute left-0 top-0 w-1/2 h-full"
+                style={{ zIndex: 1 }}
+              >
+                {renderLeftHalf(flipData.baseLeftSpread)}
+                {/* Spine edge gradient */}
+                <div className="page-spine-edge-left" />
+              </div>
+
+              {/* ─── Base Right Page ─── */}
+              <div
+                className="absolute right-0 top-0 w-1/2 h-full"
+                style={{ zIndex: 1 }}
+              >
+                {renderRightHalf(flipData.baseRightSpread)}
+                {/* Spine edge gradient */}
+                <div className="page-spine-edge-right" />
+              </div>
+
+              {/* ─── Shadow overlays during flip ─── */}
+              <div
+                className={`flip-shadow ${isFlipping ? 'flip-shadow-active' : ''}`}
+              />
+              <div
+                className={`flip-shadow-left ${isFlipping ? 'flip-shadow-left-active' : ''}`}
+              />
+              <div
+                className={`flip-depth-shadow ${isFlipping ? 'flip-depth-shadow-active' : ''}`}
               />
 
-              {/* Page content with flip animation */}
-              <AnimatePresence mode="wait" custom={flipDirection}>
-                <motion.div
-                  key={currentSpread}
-                  custom={flipDirection}
-                  variants={pageVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{
-                    duration: 0.5,
-                    ease: [0.4, 0, 0.2, 1],
+              {/* ─── Flippable Page (3D) ─── */}
+              {flipData.showFlipOverlay && (
+                <div
+                  ref={flipPageRef}
+                  className="flippable-page"
+                  style={{
+                    zIndex: 10,
+                    transform: `rotateY(${flipData.initialFlipAngle}deg)`,
+                    transition: 'none', // Will be set by JS during animation
                   }}
-                  className="w-full h-full"
-                  style={{ transformStyle: 'preserve-3d' }}
                 >
-                  {renderSpread(currentSpread)}
-                </motion.div>
-              </AnimatePresence>
+                  {/* Front Face */}
+                  <div className="page-face page-face-front">
+                    {renderRightHalf(flipData.flipFrontSpread)}
+                    {/* Spine edge gradient on front face */}
+                    <div className="page-spine-edge-right" />
+                    {/* Page turn shadow gradient near spine */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-[60px] pointer-events-none"
+                      style={{
+                        background: 'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 100%)',
+                        zIndex: 3,
+                      }}
+                    />
+                  </div>
 
-              {/* Navigation arrows */}
+                  {/* Back Face */}
+                  <div className="page-face page-face-back">
+                    {renderLeftHalf(flipData.flipBackSpread)}
+                    {/* Spine edge gradient on back face */}
+                    <div className="page-spine-edge-left" />
+                    {/* Page turn shadow gradient near spine (mirrored) */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-[60px] pointer-events-none"
+                      style={{
+                        background: 'linear-gradient(to left, rgba(0,0,0,0.08) 0%, transparent 100%)',
+                        zIndex: 3,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ─── Book Spine ─── */}
+              <div className="book-spine" />
+
+              {/* ─── Navigation arrows ─── */}
               <button
                 onClick={prevPage}
                 disabled={currentSpread === 0 || isFlipping}
@@ -1463,7 +1485,7 @@ export default function Home() {
             <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={prevPage}
-                disabled={currentSpread === 0}
+                disabled={currentSpread === 0 || isFlipping}
                 className="p-1 rounded disabled:opacity-30"
                 style={{ color: 'var(--wedding-purple)' }}
               >
@@ -1474,7 +1496,8 @@ export default function Home() {
                 {Array.from({ length: totalSpreads }, (_, i) => (
                   <button
                     key={i}
-                    onClick={() => goToSpread(i, i > currentSpread ? 'next' : 'prev')}
+                    onClick={() => goToSpread(i)}
+                    disabled={isFlipping}
                     className={`w-2 h-2 rounded-full transition-all ${
                       i === currentSpread ? 'w-6' : ''
                     }`}
@@ -1488,7 +1511,7 @@ export default function Home() {
 
               <button
                 onClick={nextPage}
-                disabled={currentSpread >= totalSpreads - 1}
+                disabled={currentSpread >= totalSpreads - 1 || isFlipping}
                 className="p-1 rounded disabled:opacity-30"
                 style={{ color: 'var(--wedding-purple)' }}
               >
@@ -1500,9 +1523,9 @@ export default function Home() {
             <p className="text-xs mt-1" style={{ color: 'var(--muted-foreground)' }}>
               {currentSpread === 0
                 ? 'Capa'
-                : isSignatureSpread(currentSpread)
+                : isSignatureSpreadFn(currentSpread)
                 ? 'Assinaturas'
-                : isBackCover(currentSpread)
+                : isBackCoverFn(currentSpread)
                 ? 'Contracapa'
                 : `Página ${currentSpread} de ${totalSpreads - 2}`}
             </p>
@@ -1510,7 +1533,6 @@ export default function Home() {
         ) : (
           /* ═══════════ GRID VIEW ═══════════ */
           <div className="max-w-5xl mx-auto w-full px-4 py-6">
-            {/* Header */}
             <div className="flex items-center justify-center gap-3 mb-6">
               <div className="h-px flex-1" style={{ backgroundColor: 'var(--wedding-lavender)' }} />
               <h2
@@ -1561,7 +1583,6 @@ export default function Home() {
           <DialogDescription className="sr-only">Envie sua foto para o álbum do casamento</DialogDescription>
 
           <div className="p-5">
-            {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div
@@ -1576,7 +1597,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Guest name */}
             <div className="mb-3">
               <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--wedding-deep)' }}>
                 Seu nome
@@ -1594,7 +1614,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Frame selection */}
             <div className="mb-3">
               <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--wedding-deep)' }}>
                 <Palette className="w-3.5 h-3.5 inline mr-1" />
@@ -1603,7 +1622,6 @@ export default function Home() {
               <FrameSelector selected={selectedFrame} onSelect={setSelectedFrame} />
             </div>
 
-            {/* Camera / File buttons */}
             <div className="grid grid-cols-2 gap-2 mb-3">
               <Button
                 onClick={() => cameraInputRef.current?.click()}
@@ -1630,7 +1648,6 @@ export default function Home() {
               </Button>
             </div>
 
-            {/* Hidden inputs */}
             <input
               ref={cameraInputRef}
               type="file"
@@ -1648,7 +1665,6 @@ export default function Home() {
               onChange={handleFileSelect}
             />
 
-            {/* Preview */}
             <AnimatePresence>
               {previewUrl && (
                 <motion.div
@@ -1689,7 +1705,6 @@ export default function Home() {
               )}
             </AnimatePresence>
 
-            {/* Upload button */}
             <AnimatePresence>
               {selectedFile && (
                 <motion.div
