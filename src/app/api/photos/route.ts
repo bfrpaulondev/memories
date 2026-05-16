@@ -120,9 +120,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, photo: photoData });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Upload error:', error);
-    return NextResponse.json({ error: 'Erro ao fazer upload.' }, { status: 500 });
+    const detail = error?.message || String(error);
+    return NextResponse.json({ error: 'Erro ao fazer upload.', detail }, { status: 500 });
   }
 }
 
