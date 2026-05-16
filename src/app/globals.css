@@ -286,11 +286,11 @@
 }
 
 /* ═══════════════════════════════════════════════════════════
-   3D Book Effects - Premium Realistic Page Turn
+   3D Book Effects - CodePen Premium Realistic Page Turn
    ═══════════════════════════════════════════════════════════ */
 
 .book-3d {
-  perspective: 1800px;
+  perspective: 1200px;
   perspective-origin: 50% 50%;
 }
 
@@ -300,9 +300,12 @@
   width: 50%;
   height: 100%;
   transform-style: preserve-3d;
-  transform-origin: left center;
+  transform-origin: 0% 0%;
   -webkit-transform-style: preserve-3d;
-  -webkit-transform-origin: left center;
+  -webkit-transform-origin: 0% 0%;
+  /* Paper gradient for depth - like CodePen example */
+  background-color: #F5F5F5;
+  background-image: linear-gradient(90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
 }
 
 .page-face {
@@ -317,11 +320,15 @@
 .page-face-front {
   transform: rotateY(0deg) translateZ(1px);
   -webkit-transform: rotateY(0deg) translateZ(1px);
+  /* Paper texture on front */
+  background-image: linear-gradient(90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
 }
 
 .page-face-back {
   transform: rotateY(180deg) translateZ(1px);
   -webkit-transform: rotateY(180deg) translateZ(1px);
+  /* Reversed paper texture on back */
+  background-image: linear-gradient(-90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
 }
 
 /* Shadow under turning page */
