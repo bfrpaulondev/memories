@@ -163,11 +163,11 @@
     0 0 0 1px rgba(201, 169, 110, 0.15);
 }
 
-/* ═══ 3D Book Flip Engine (turn.js 4.1 inspired) ═══ */
+/* ═══ 3D Book Flip Engine — Premium Framer Motion Edition ═══ */
 
 /* Book container — provides perspective for 3D transforms */
 .book-container {
-  perspective: 1500px;
+  perspective: 1800px;
   perspective-origin: 50% 50%;
 }
 
@@ -180,6 +180,7 @@
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  will-change: transform;
 }
 
 .page-wrapper:active {
@@ -237,6 +238,135 @@
   background: linear-gradient(to left, rgba(255,255,255,0.15) 0%, transparent 40%);
   pointer-events: none;
   z-index: 2;
+}
+
+/* Page bending gradient — simulates page curving near the spine edge */
+.page-bend-gradient {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(to right, rgba(0,0,0,0.15) 0%, transparent 100%);
+}
+
+/* Page bending gradient on back face — darker, simulates shadow on back */
+.page-bend-gradient-back {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(to left, rgba(0,0,0,0.2) 0%, transparent 100%);
+}
+
+/* ─── Page Corner Peel Hint ─── */
+/* Small curl in the page corner suggesting it can be turned */
+.page-corner-peel {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+
+/* Right page: corner peel at bottom-left (forward direction) */
+.page-corner-peel-right {
+  bottom: 0;
+  left: 0;
+}
+
+.page-corner-peel-right::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.04) 50%, rgba(0,0,0,0.08) 60%, rgba(201,169,110,0.15) 100%);
+  border-radius: 0 4px 0 0;
+  animation: cornerPeelRight 3s ease-in-out infinite;
+}
+
+/* Left page: corner peel at bottom-right (backward direction) */
+.page-corner-peel-left {
+  bottom: 0;
+  right: 0;
+}
+
+.page-corner-peel-left::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(225deg, transparent 50%, rgba(0,0,0,0.04) 50%, rgba(0,0,0,0.08) 60%, rgba(201,169,110,0.15) 100%);
+  border-radius: 4px 0 0 0;
+  animation: cornerPeelLeft 3s ease-in-out infinite;
+}
+
+@keyframes cornerPeelRight {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.5; }
+  50% { transform: translate(3px, -3px) rotate(3deg); opacity: 1; }
+}
+
+@keyframes cornerPeelLeft {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.5; }
+  50% { transform: translate(-3px, -3px) rotate(-3deg); opacity: 1; }
+}
+
+/* ─── Page Stacking Effect ─── */
+/* Visible page edges peeking out from behind, like a real book */
+
+/* Right side page stack edges */
+.page-stack-edge {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%);
+  border: 1px solid rgba(201,169,110,0.08);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 1px 0 2px rgba(0,0,0,0.04);
+  pointer-events: none;
+}
+
+/* Left side page stack edges */
+.page-stack-edge-left {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: calc(50% + 4px);
+  background: linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%);
+  border: 1px solid rgba(201,169,110,0.08);
+  border-radius: 2px 0 0 2px;
+  box-shadow: -1px 0 2px rgba(0,0,0,0.04);
+  pointer-events: none;
+}
+
+/* Mobile page stack edges */
+.page-stack-edge-mobile {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%);
+  border: 1px solid rgba(201,169,110,0.08);
+  border-radius: 2px;
+  box-shadow: 1px 1px 3px rgba(0,0,0,0.05);
+  pointer-events: none;
+}
+
+/* ─── Cast Shadow ─── */
+/* Shadow cast by the flipping page onto the page beneath */
+.page-cast-shadow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(45, 27, 61, 0.2) 0%, transparent 80%);
+  z-index: 4;
 }
 
 /* Spine shadow — center of the book */

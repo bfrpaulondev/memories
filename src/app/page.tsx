@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, animate } from 'framer-motion'
 import {
   Camera, Upload, Heart, Lock,
   Pen, Eraser, Loader2, Users, X, Sparkles,
@@ -48,11 +48,9 @@ interface BookPage {
 type FlipDirection = 'forward' | 'backward'
 
 // ─── Constants ───────────────────────────────────────────
-const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2025'
+const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2026'
 const WEDDING_DATE = '2026'
-const FLIP_COMPLETE_DURATION = 500
-const FLIP_SPRING_DURATION = 350
-const DRAG_THRESHOLD = 8
+const DRAG_THRESHOLD = 5
 
 // ─── Utility: Parse guestName with frame & message ───────
 function parseGuestData(guestName: string, frame?: string, message?: string) {
@@ -463,7 +461,6 @@ export default function Home() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const bookContainerRef = useRef<HTMLDivElement>(null)
   const dragStartRef = useRef<{ x: number; direction: FlipDirection } | null>(null)
-  const animFrameRef = useRef<number>(0)
   const flipAngleRef = useRef(0)
   const isDraggingRef = useRef(false)
   const currentPageRef = useRef(0)
@@ -541,38 +538,42 @@ export default function Home() {
   }, [fetchPhotos, toast])
 
   // ═══════════════════════════════════════════════════════
-  // FLIP ENGINE — requestAnimationFrame based animations
+  // FLIP ENGINE — Framer Motion spring-based animations
   // ═══════════════════════════════════════════════════════
 
-  const animateToAngle = useCallback((
-    startAngle: number,
-    endAngle: number,
-    duration: number,
-    onComplete: () => void,
-  ) => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
-    const startTime = performance.now()
-    const animate = (now: number) => {
-      const elapsed = now - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      // Ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const angle = startAngle + (endAngle - startAngle) * eased
-      setFlipAngle(angle)
-      flipAngleRef.current = angle
-      if (progress < 1) {
-        animFrameRef.current = requestAnimationFrame(animate)
-      } else {
-        onComplete()
-      }
+  const flipAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
+
+  // Animate flip angle to target using Framer Motion spring physics
+  const animateFlipTo = useCallback((endAngle: number, onComplete: () => void) => {
+    if (flipAnimationRef.current) {
+      flipAnimationRef.current.stop()
+      flipAnimationRef.current = null
     }
-    animFrameRef.current = requestAnimationFrame(animate)
+
+    const currentAngle = flipAngleRef.current
+
+    flipAnimationRef.current = animate(currentAngle, endAngle, {
+      type: 'spring',
+      stiffness: 130,
+      damping: 20,
+      mass: 0.9,
+      restDelta: 0.5,
+      restSpeed: 2,
+      onUpdate: (v: number) => {
+        setFlipAngle(v)
+        flipAngleRef.current = v
+      },
+      onComplete: () => {
+        flipAnimationRef.current = null
+        onComplete()
+      },
+    })
   }, [])
 
-  // Complete the flip: animate to 180° then update page
+  // Complete the flip: spring to 180° then update page
   const completeFlip = useCallback((fromAngle: number, direction: FlipDirection) => {
     setIsFlipping(true)
-    animateToAngle(fromAngle, 180, FLIP_COMPLETE_DURATION, () => {
+    animateFlipTo(180, () => {
       setCurrentPage((prev) => {
         if (direction === 'forward') return isMobile ? prev + 1 : prev + 2
         return isMobile ? prev - 1 : prev - 2
@@ -583,19 +584,36 @@ export default function Home() {
       setFlipDirection(null)
       setIsDragging(false)
     })
-  }, [animateToAngle, isMobile])
+  }, [animateFlipTo, isMobile])
 
-  // Spring back: animate to 0° and cancel
+  // Spring back: animate to 0° with snappier spring
   const springBack = useCallback((fromAngle: number) => {
     setIsFlipping(true)
-    animateToAngle(fromAngle, 0, FLIP_SPRING_DURATION, () => {
-      setFlipAngle(0)
-      flipAngleRef.current = 0
-      setIsFlipping(false)
-      setFlipDirection(null)
-      setIsDragging(false)
+    if (flipAnimationRef.current) {
+      flipAnimationRef.current.stop()
+      flipAnimationRef.current = null
+    }
+    flipAnimationRef.current = animate(fromAngle, 0, {
+      type: 'spring',
+      stiffness: 260,
+      damping: 28,
+      mass: 0.7,
+      restDelta: 0.3,
+      restSpeed: 3,
+      onUpdate: (v: number) => {
+        setFlipAngle(v)
+        flipAngleRef.current = v
+      },
+      onComplete: () => {
+        flipAnimationRef.current = null
+        setFlipAngle(0)
+        flipAngleRef.current = 0
+        setIsFlipping(false)
+        setFlipDirection(null)
+        setIsDragging(false)
+      },
     })
-  }, [animateToAngle])
+  }, [])
 
   // Trigger a flip programmatically (keyboard, click)
   const triggerFlip = useCallback((direction: FlipDirection) => {
@@ -737,10 +755,10 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [triggerFlip])
 
-  // ─── Cleanup animation frame on unmount ────────────
+  // ─── Cleanup animation on unmount ────────────
   useEffect(() => {
     return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+      if (flipAnimationRef.current) flipAnimationRef.current.stop()
     }
   }, [])
 
@@ -1111,16 +1129,39 @@ export default function Home() {
             {/* ═══ DESKTOP: Double-page spread ═══ */}
             {!isMobile && (
               <>
+                {/* Page stacking effect — visible edges on the right side */}
+                {currentPage + 3 < totalPages && (
+                  <div className="page-stack-edge" style={{ right: '2px', width: 'calc(50% + 4px)', zIndex: 0 }} />
+                )}
+                {currentPage + 3 < totalPages && (
+                  <div className="page-stack-edge" style={{ right: '4px', width: 'calc(50% + 2px)', zIndex: 0 }} />
+                )}
+                {/* Page stacking effect — visible edges on the left side */}
+                {currentPage > 1 && (
+                  <div className="page-stack-edge-left" style={{ left: '2px', zIndex: 0 }} />
+                )}
+                {currentPage > 1 && (
+                  <div className="page-stack-edge-left" style={{ left: '4px', zIndex: 0 }} />
+                )}
+
                 {/* Static left page */}
                 <div className="absolute left-0 top-0 w-1/2 h-full overflow-hidden rounded-l-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-left" />
                   {renderPage(desktopLeftStatic)}
+                  {/* Corner peel hint — bottom-right of left page (backward direction) */}
+                  {!isActive && currentPage > 0 && (
+                    <div className="page-corner-peel page-corner-peel-left" />
+                  )}
                 </div>
 
                 {/* Static right page (under flipping page) */}
                 <div className="absolute right-0 top-0 w-1/2 h-full overflow-hidden rounded-r-sm" style={{ zIndex: 1 }}>
                   <div className="page-spine-edge-right" />
                   {renderPage(desktopRightStatic)}
+                  {/* Corner peel hint — bottom-left of right page (forward direction) */}
+                  {!isActive && currentPage < maxPage && (
+                    <div className="page-corner-peel page-corner-peel-right" />
+                  )}
                 </div>
 
                 {/* Spine */}
@@ -1142,11 +1183,29 @@ export default function Home() {
                     <div className="page-face page-face-front">
                       {renderPage(desktopFrontFace)}
                       {/* Light reflection during flip — simulates paper catching light */}
-                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.6 }} />
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.7 }} />
+                      {/* Page bending gradient — simulates page curving near spine */}
+                      <div
+                        className="page-bend-gradient"
+                        style={{
+                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.3,
+                          left: isForward ? 0 : undefined,
+                          right: isForward ? undefined : 0,
+                        }}
+                      />
                     </div>
                     {/* Back face */}
                     <div className="page-face page-face-back">
                       {renderPage(desktopBackFace)}
+                      {/* Page bending gradient on back face */}
+                      <div
+                        className="page-bend-gradient-back"
+                        style={{
+                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.4,
+                          left: isForward ? undefined : 0,
+                          right: isForward ? 0 : undefined,
+                        }}
+                      />
                     </div>
                   </div>
                 )}
@@ -1156,17 +1215,39 @@ export default function Home() {
                   <>
                     {/* Shadow darkening the left page during forward flip */}
                     {isForward && (
-                      <div className="flip-shadow-left" style={{ opacity: shadowIntensity * 0.8 }} />
+                      <div className="flip-shadow-left" style={{ opacity: shadowIntensity * 0.85 }} />
                     )}
                     {/* Shadow darkening the right page during backward flip */}
                     {isBackward && (
-                      <div className="flip-shadow-right" style={{ opacity: shadowIntensity * 0.8 }} />
+                      <div className="flip-shadow-right" style={{ opacity: shadowIntensity * 0.85 }} />
                     )}
                     {/* Fold line shadow at spine */}
                     <div
                       className={`fold-shadow ${isFlippingHard ? 'hard-fold-shadow' : ''}`}
-                      style={{ opacity: foldIntensity * 0.9 }}
+                      style={{ opacity: foldIntensity * 0.95 }}
                     />
+                    {/* Cast shadow — the page's shadow falling on the page beneath */}
+                    {isForward && flipAngle > 10 && flipAngle < 170 && (
+                      <div
+                        className="page-cast-shadow"
+                        style={{
+                          left: '50%',
+                          width: `${Math.sin(flipAngle * Math.PI / 180) * 25}%`,
+                          opacity: foldIntensity * 0.4,
+                        }}
+                      />
+                    )}
+                    {isBackward && flipAngle > 10 && flipAngle < 170 && (
+                      <div
+                        className="page-cast-shadow"
+                        style={{
+                          right: '50%',
+                          width: `${Math.sin(flipAngle * Math.PI / 180) * 25}%`,
+                          direction: 'rtl',
+                          opacity: foldIntensity * 0.4,
+                        }}
+                      />
+                    )}
                   </>
                 )}
               </>
@@ -1175,9 +1256,21 @@ export default function Home() {
             {/* ═══ MOBILE: Single page view ═══ */}
             {isMobile && (
               <>
+                {/* Page stacking effect */}
+                {currentPage + 1 < totalPages && (
+                  <div className="page-stack-edge-mobile" style={{ bottom: '-2px', right: '-2px' }} />
+                )}
+                {currentPage + 1 < totalPages && (
+                  <div className="page-stack-edge-mobile" style={{ bottom: '-4px', right: '-4px' }} />
+                )}
+
                 {/* Static page underneath (revealed during flip, or current when idle) */}
                 <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ zIndex: 1 }}>
                   {renderPage(isActive ? mobileUnderPage : safeGet(currentPage))}
+                  {/* Corner peel hint — forward */}
+                  {!isActive && currentPage < maxPage && (
+                    <div className="page-corner-peel page-corner-peel-right" />
+                  )}
                 </div>
 
                 {/* ─── Flipping page ─── */}
@@ -1195,18 +1288,34 @@ export default function Home() {
                     {/* Front face */}
                     <div className="page-face page-face-front">
                       {renderPage(mobileFrontFace)}
-                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.4 }} />
+                      <div className="page-light-reflect" style={{ opacity: shadowIntensity * 0.5 }} />
+                      <div
+                        className="page-bend-gradient"
+                        style={{
+                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.25,
+                          left: isForward ? 0 : undefined,
+                          right: isForward ? undefined : 0,
+                        }}
+                      />
                     </div>
                     {/* Back face */}
                     <div className="page-face page-face-back">
                       {renderPage(mobileBackFace)}
+                      <div
+                        className="page-bend-gradient-back"
+                        style={{
+                          opacity: Math.sin(flipAngle * Math.PI / 180) * 0.35,
+                          left: isForward ? undefined : 0,
+                          right: isForward ? 0 : undefined,
+                        }}
+                      />
                     </div>
                   </div>
                 )}
 
                 {/* ─── Shadow during flip ─── */}
                 {isActive && flipDirection && (
-                  <div className="mobile-flip-shadow" style={{ opacity: foldIntensity * 0.4 }} />
+                  <div className="mobile-flip-shadow" style={{ opacity: foldIntensity * 0.5 }} />
                 )}
               </>
             )}
