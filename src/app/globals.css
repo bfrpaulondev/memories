@@ -77,7 +77,7 @@
   --sidebar-border: #E8D5F5;
   --sidebar-ring: #7B2D8E;
 
-  /* ═══ Premium Wedding Palette ═══ */
+  /* Premium Wedding Palette */
   --wedding-royal: #4A1A6B;
   --wedding-purple: #7B2D8E;
   --wedding-purple-dark: #5B1F6E;
@@ -114,19 +114,6 @@
   --border: #3D2A54;
   --input: #3D2A54;
   --ring: #7B2D8E;
-  --chart-1: #7B2D8E;
-  --chart-2: #A78BFA;
-  --chart-3: #C9A96E;
-  --chart-4: #C4B5FD;
-  --chart-5: #9B59B6;
-  --sidebar: #1A1028;
-  --sidebar-foreground: #F3E8FF;
-  --sidebar-primary: #7B2D8E;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #3D2A54;
-  --sidebar-accent-foreground: #F3E8FF;
-  --sidebar-border: #3D2A54;
-  --sidebar-ring: #7B2D8E;
 }
 
 @layer base {
@@ -138,9 +125,7 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Custom Scrollbar
-   ═══════════════════════════════════════════════════════════ */
+/* Custom Scrollbar */
 .album-scroll::-webkit-scrollbar {
   width: 5px;
 }
@@ -155,17 +140,13 @@
   background: var(--wedding-purple);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Signature Canvas
-   ═══════════════════════════════════════════════════════════ */
+/* Signature Canvas */
 .signature-canvas {
   touch-action: none;
   cursor: crosshair;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Premium Page Texture
-   ═══════════════════════════════════════════════════════════ */
+/* Premium Page Texture */
 .page-texture {
   background-image:
     linear-gradient(135deg, rgba(123, 45, 142, 0.02) 0%, transparent 50%),
@@ -173,9 +154,7 @@
     url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239B59B6' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Book Shadow
-   ═══════════════════════════════════════════════════════════ */
+/* Book Shadow */
 .book-shadow {
   box-shadow:
     -6px 0 16px -4px rgba(74, 26, 107, 0.12),
@@ -184,111 +163,7 @@
     0 0 0 1px rgba(201, 169, 110, 0.15);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Page Edge Effects
-   ═══════════════════════════════════════════════════════════ */
-.page-edge-left {
-  background: linear-gradient(to right, rgba(0,0,0,0.05) 0%, transparent 12%);
-}
-.page-edge-right {
-  background: linear-gradient(to left, rgba(0,0,0,0.05) 0%, transparent 12%);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   PIN Input
-   ═══════════════════════════════════════════════════════════ */
-.pin-digit {
-  width: 56px;
-  height: 64px;
-  text-align: center;
-  font-size: 26px;
-  font-weight: bold;
-  border: 2px solid var(--wedding-lavender);
-  border-radius: 14px;
-  background: white;
-  color: var(--wedding-purple-deep);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  outline: none;
-  font-family: 'Cormorant Garamond', Georgia, serif;
-}
-.pin-digit:focus {
-  border-color: var(--wedding-gold);
-  box-shadow: 0 0 0 4px rgba(201, 169, 110, 0.2), 0 4px 12px rgba(201, 169, 110, 0.1);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Premium Frame Styles
-   ═══════════════════════════════════════════════════════════ */
-
-/* Classic Gold Frame - Ornate */
-.frame-classic {
-  border: 5px solid var(--wedding-gold);
-  box-shadow:
-    inset 0 0 0 2px var(--wedding-gold-dark),
-    inset 0 0 0 5px rgba(201, 169, 110, 0.3),
-    inset 0 0 0 7px var(--wedding-gold),
-    0 0 0 1px rgba(201, 169, 110, 0.3),
-    0 6px 20px rgba(0,0,0,0.18),
-    0 2px 4px rgba(0,0,0,0.08);
-  position: relative;
-  border-radius: 2px;
-}
-.frame-classic::before,
-.frame-classic::after {
-  content: '\2767';
-  position: absolute;
-  font-size: 20px;
-  color: var(--wedding-gold);
-  z-index: 2;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-.frame-classic::before {
-  top: 6px;
-  left: 8px;
-}
-.frame-classic::after {
-  bottom: 6px;
-  right: 8px;
-  transform: rotate(180deg);
-}
-
-/* Floral Lavender Frame - Soft & Elegant */
-.frame-floral {
-  border: 3px solid var(--wedding-lavender);
-  border-radius: 18px;
-  box-shadow:
-    inset 0 0 0 1px rgba(155, 89, 182, 0.08),
-    0 0 0 4px var(--wedding-lavender-soft),
-    0 0 0 6px rgba(155, 89, 182, 0.06),
-    0 0 0 8px var(--wedding-lavender-soft),
-    0 6px 24px rgba(123, 45, 142, 0.12),
-    0 2px 6px rgba(123, 45, 142, 0.06);
-  overflow: hidden;
-}
-
-/* Modern Minimal Frame - Sleek */
-.frame-modern {
-  border: 1px solid rgba(123, 45, 142, 0.15);
-  box-shadow:
-    0 2px 10px rgba(0,0,0,0.06),
-    0 8px 30px rgba(0,0,0,0.04),
-    inset 0 -4px 0 0 var(--wedding-purple);
-  position: relative;
-  border-radius: 4px;
-}
-.frame-modern::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px solid rgba(123, 45, 142, 0.06);
-  pointer-events: none;
-  border-radius: 2px;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   3D Book Effects - CodePen Premium Realistic Page Turn
-   ═══════════════════════════════════════════════════════════ */
-
+/* ═══ 3D Book Effects - CodePen Premium Realistic Page Turn ═══ */
 .book-3d {
   perspective: 1200px;
   perspective-origin: 50% 50%;
@@ -303,9 +178,32 @@
   transform-origin: 0% 0%;
   -webkit-transform-style: preserve-3d;
   -webkit-transform-origin: 0% 0%;
-  /* Paper gradient for depth - like CodePen example */
   background-color: #F5F5F5;
   background-image: linear-gradient(90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.flippable-page:active {
+  cursor: grabbing;
+}
+
+/* Mobile single-page flip */
+.flippable-page-mobile {
+  position: absolute;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform-origin: 0% 0%;
+  -webkit-transform-style: preserve-3d;
+  -webkit-transform-origin: 0% 0%;
+  background-color: #F5F5F5;
+  background-image: linear-gradient(90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .page-face {
@@ -320,14 +218,12 @@
 .page-face-front {
   transform: rotateY(0deg) translateZ(1px);
   -webkit-transform: rotateY(0deg) translateZ(1px);
-  /* Paper texture on front */
   background-image: linear-gradient(90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
 }
 
 .page-face-back {
   transform: rotateY(180deg) translateZ(1px);
   -webkit-transform: rotateY(180deg) translateZ(1px);
-  /* Reversed paper texture on back */
   background-image: linear-gradient(-90deg, rgba(227,227,227,1) 0%, rgba(247,247,247,0) 18%);
 }
 
@@ -341,11 +237,6 @@
   background: linear-gradient(to left, rgba(45, 27, 61, 0.2) 0%, transparent 60%);
   z-index: 5;
   border-radius: 0 4px 4px 0;
-}
-
-.flip-shadow-active {
-  opacity: 1;
-  transition: opacity 1s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 /* Shadow on left page during flip */
@@ -363,12 +254,7 @@
   border-radius: 4px 0 0 4px;
 }
 
-.flip-shadow-left-active {
-  opacity: 1;
-  transition: opacity 1s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-
-/* Spine shadow - premium */
+/* Spine shadow */
 .book-spine {
   position: absolute;
   left: 50%;
@@ -407,7 +293,22 @@
   background: linear-gradient(to right, rgba(0,0,0,0.06), transparent);
 }
 
-/* Page edge gradient (spine side) for depth */
+/* Depth shadow during page flip */
+.flip-depth-shadow {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+  background: radial-gradient(ellipse at center, rgba(45, 27, 61, 0.25) 0%, transparent 70%);
+  z-index: 3;
+}
+
+/* Page edge gradient for depth */
 .page-spine-edge-left {
   position: absolute;
   right: 0;
@@ -430,29 +331,7 @@
   z-index: 2;
 }
 
-/* Depth shadow during page flip */
-.flip-depth-shadow {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 60px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s ease-out;
-  background: radial-gradient(ellipse at center, rgba(45, 27, 61, 0.25) 0%, transparent 70%);
-  z-index: 3;
-}
-
-.flip-depth-shadow-active {
-  opacity: 1;
-  transition: opacity 1s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Gold Shimmer Animation
-   ═══════════════════════════════════════════════════════════ */
+/* Gold Shimmer Animation */
 @keyframes goldShimmer {
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
@@ -475,26 +354,7 @@
   animation: goldShimmer 4s ease-in-out infinite;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Floating Sparkle Particles
-   ═══════════════════════════════════════════════════════════ */
-@keyframes sparkleFloat {
-  0%, 100% { transform: translateY(0) scale(0); opacity: 0; }
-  10% { opacity: 1; transform: translateY(0) scale(1); }
-  90% { opacity: 0.6; }
-  100% { transform: translateY(-80px) scale(0); opacity: 0; }
-}
-
-@keyframes sparkleDrift {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 0.4; }
-  100% { transform: translate(30px, -100px) rotate(180deg); opacity: 0; }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Ornamental Divider
-   ═══════════════════════════════════════════════════════════ */
+/* Ornamental Divider */
 .ornament-divider {
   display: flex;
   align-items: center;
@@ -510,9 +370,7 @@
   background: linear-gradient(90deg, transparent, var(--wedding-gold), transparent);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Premium Message Lines
-   ═══════════════════════════════════════════════════════════ */
+/* Premium Message Lines */
 .message-lines {
   background-image: repeating-linear-gradient(
     transparent,
@@ -523,9 +381,7 @@
   line-height: 28px;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Pulse Glow Effect
-   ═══════════════════════════════════════════════════════════ */
+/* Pulse Glow Effect */
 @keyframes pulseGlow {
   0%, 100% { box-shadow: 0 0 5px rgba(201, 169, 110, 0.3); }
   50% { box-shadow: 0 0 20px rgba(201, 169, 110, 0.5), 0 0 40px rgba(201, 169, 110, 0.2); }
@@ -535,9 +391,7 @@
   animation: pulseGlow 3s ease-in-out infinite;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Cover Gold Border Animation
-   ═══════════════════════════════════════════════════════════ */
+/* Cover Gold Border Animation */
 @keyframes borderGlow {
   0%, 100% { border-color: rgba(201, 169, 110, 0.3); }
   50% { border-color: rgba(201, 169, 110, 0.6); }
@@ -547,9 +401,7 @@
   animation: borderGlow 4s ease-in-out infinite;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Elegant Fade-in for photos
-   ═══════════════════════════════════════════════════════════ */
+/* Elegant Fade-in */
 @keyframes elegantFadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -559,10 +411,107 @@
   animation: elegantFadeIn 0.8s ease-out forwards;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Premium Button Hover
-   ═══════════════════════════════════════════════════════════ */
+/* Premium Button Hover */
 @keyframes btnShine {
   from { left: -100%; }
   to { left: 200%; }
+}
+
+/* ═══ Frame Styles ═══ */
+
+/* Classic Gold Frame - Ornate */
+.frame-classic {
+  border: 5px solid var(--wedding-gold);
+  box-shadow:
+    inset 0 0 0 2px var(--wedding-gold-dark),
+    inset 0 0 0 5px rgba(201, 169, 110, 0.3),
+    inset 0 0 0 7px var(--wedding-gold),
+    0 0 0 1px rgba(201, 169, 110, 0.3),
+    0 6px 20px rgba(0,0,0,0.18),
+    0 2px 4px rgba(0,0,0,0.08);
+  position: relative;
+  border-radius: 2px;
+}
+.frame-classic::before,
+.frame-classic::after {
+  content: '\2767';
+  position: absolute;
+  font-size: 20px;
+  color: var(--wedding-gold);
+  z-index: 2;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.frame-classic::before {
+  top: 6px;
+  left: 8px;
+}
+.frame-classic::after {
+  bottom: 6px;
+  right: 8px;
+  transform: rotate(180deg);
+}
+
+/* Floral Lavender Frame */
+.frame-floral {
+  border: 3px solid var(--wedding-lavender);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 0 0 1px rgba(155, 89, 182, 0.08),
+    0 0 0 4px var(--wedding-lavender-soft),
+    0 0 0 6px rgba(155, 89, 182, 0.06),
+    0 0 0 8px var(--wedding-lavender-soft),
+    0 6px 24px rgba(123, 45, 142, 0.12),
+    0 2px 6px rgba(123, 45, 142, 0.06);
+  overflow: hidden;
+}
+
+/* Modern Minimal Frame */
+.frame-modern {
+  border: 1px solid rgba(123, 45, 142, 0.15);
+  box-shadow:
+    0 2px 10px rgba(0,0,0,0.06),
+    0 8px 30px rgba(0,0,0,0.04),
+    inset 0 -4px 0 0 var(--wedding-purple);
+  position: relative;
+  border-radius: 4px;
+}
+.frame-modern::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(123, 45, 142, 0.06);
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* PIN Input */
+.pin-digit {
+  width: 56px;
+  height: 64px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: bold;
+  border: 2px solid var(--wedding-lavender);
+  border-radius: 14px;
+  background: white;
+  color: var(--wedding-purple-deep);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+.pin-digit:focus {
+  border-color: var(--wedding-gold);
+  box-shadow: 0 0 0 4px rgba(201, 169, 110, 0.2), 0 4px 12px rgba(201, 169, 110, 0.1);
+}
+
+/* Inline signature tap area */
+.signature-tap-area {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px dashed rgba(201, 169, 110, 0.3);
+  border-radius: 8px;
+}
+.signature-tap-area:hover {
+  border-color: rgba(201, 169, 110, 0.6);
+  background: rgba(243, 232, 255, 0.3);
 }

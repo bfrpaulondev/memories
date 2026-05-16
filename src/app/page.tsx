@@ -4,10 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Camera, Upload, Heart, Lock, BookOpen, ChevronLeft, ChevronRight,
+  Camera, Upload, Heart, Lock,
   Pen, Eraser, Loader2, Users, X, Sparkles,
-  Image as ImageIcon, Download, Check,
-  MessageSquare, Feather, Crown, Gem,
+  Image as ImageIcon, Check,
+  Feather, Crown, Gem, PenLine,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,57 +21,43 @@ import { useToast } from '@/hooks/use-toast'
 // ─── Types ───────────────────────────────────────────────
 interface Photo {
   id: string
-  filename: string
+  cloudinaryUrl: string
+  cloudinaryId: string
   originalName: string
   guestName: string
   mimeType: string
   size: number
+  frame: 'classic' | 'floral' | 'modern'
+  message: string
+  isSignature: boolean
+  signatureForPhotoId: string | null
   createdAt: string
 }
 
-interface ParsedGuest {
-  name: string
-  frame: 'classic' | 'floral' | 'modern'
-  message: string
-}
-
 type FrameStyle = 'classic' | 'floral' | 'modern'
-type ViewMode = 'book' | 'grid'
 
 // ─── Constants ───────────────────────────────────────────
-const WEDDING_PIN = '2025'
-const COUPLE_NAMES = 'Patrícia & Samuel'
+const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2025'
 const WEDDING_DATE = '2026'
-const FLIP_DURATION = 900
+const FLIP_ANIM_DURATION = 600
 
 // ─── Utility: Parse guestName with frame & message ───────
-function parseGuestName(raw: string): ParsedGuest {
-  const nameAndRest = raw.split('|frame:')
+function parseGuestData(guestName: string, frame?: string, message?: string) {
+  // New format: data is in separate fields
+  if (frame) {
+    return { name: guestName || 'Convidado', frame, message: message || '' }
+  }
+  // Legacy format: guestName contains encoded data
+  const nameAndRest = guestName.split('|frame:')
   const name = nameAndRest[0] || 'Convidado'
   const rest = nameAndRest[1] || 'classic'
   const frameAndMsg = rest.split('|msg:')
   const frameStr = frameAndMsg[0]?.replace('|signature', '') || 'classic'
-  const message = frameAndMsg[1] ? decodeURIComponent(frameAndMsg[1]) : ''
-  const isSignature = raw.includes('|signature')
+  const msg = frameAndMsg[1] ? decodeURIComponent(frameAndMsg[1]) : ''
+  const isSig = guestName.includes('|signature')
   const validFrames: FrameStyle[] = ['classic', 'floral', 'modern']
-  const frame = validFrames.includes(frameStr as FrameStyle) ? (frameStr as FrameStyle) : 'classic'
-  return { name, frame, message: isSignature ? '' : message }
-}
-
-// ─── Utility: Time Ago in Portuguese ─────────────────────
-function timeAgo(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = Math.max(0, now - then)
-  const seconds = Math.floor(diff / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-  if (seconds < 10) return 'agora mesmo'
-  if (seconds < 60) return `${seconds}s atrás`
-  if (minutes < 60) return `${minutes}min atrás`
-  if (hours < 24) return `${hours}h atrás`
-  return `${days}d atrás`
+  const f = validFrames.includes(frameStr as FrameStyle) ? (frameStr as FrameStyle) : 'classic'
+  return { name, frame: f, message: isSig ? '' : msg }
 }
 
 // ─── Ornamental Divider Component ────────────────────────
@@ -94,7 +80,7 @@ function Monogram({ size = 'lg' }: { size?: 'sm' | 'lg' }) {
       <circle cx="40" cy="40" r="38" stroke="var(--wedding-gold)" strokeWidth="1.5" opacity="0.5" />
       <circle cx="40" cy="40" r="34" stroke="var(--wedding-gold)" strokeWidth="0.5" opacity="0.3" />
       <text x="28" y="48" fontFamily="Cormorant Garamond, serif" fontSize={fs} fill="var(--wedding-gold)" fontWeight="300" fontStyle="italic">P</text>
-      <text x="38" y="52" fontFamily="Cormorant Garamond, serif" fontSize="14" fill="var(--wedding-gold)" opacity="0.6">&</text>
+      <text x="38" y="52" fontFamily="Cormorant Garamond, serif" fontSize="14" fill="var(--wedding-gold)" opacity="0.6">&amp;</text>
       <text x="47" y="48" fontFamily="Cormorant Garamond, serif" fontSize={fs} fill="var(--wedding-gold)" fontWeight="300" fontStyle="italic">S</text>
     </svg>
   )
@@ -122,10 +108,10 @@ function PhotoFrame({
 
 // ─── Frame Selector ──────────────────────────────────────
 function FrameSelector({ selected, onSelect }: { selected: FrameStyle; onSelect: (f: FrameStyle) => void }) {
-  const frames: { id: FrameStyle; label: string; icon: string; desc: string }[] = [
-    { id: 'classic', label: 'Dourado', icon: '🖼️', desc: 'Clássico real' },
-    { id: 'floral', label: 'Lavanda', icon: '🌸', desc: 'Elegância suave' },
-    { id: 'modern', label: 'Moderno', icon: '✦', desc: 'Minimalista' },
+  const frames: { id: FrameStyle; label: string; icon: string }[] = [
+    { id: 'classic', label: 'Dourado', icon: '🖼️' },
+    { id: 'floral', label: 'Lavanda', icon: '🌸' },
+    { id: 'modern', label: 'Moderno', icon: '✦' },
   ]
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -224,8 +210,20 @@ function PINModal({ open, onVerified }: { open: boolean; onVerified: () => void 
   )
 }
 
-// ─── Signature Pad Component ─────────────────────────────
-function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
+// ─── Inline Signature Area Component ─────────────────────
+function InlineSignatureArea({
+  photoId,
+  existingSignatureUrl,
+  onSignatureSaved,
+}: {
+  photoId: string
+  existingSignatureUrl: string | null
+  onSignatureSaved: () => void
+}) {
+  const { toast } = useToast()
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [savedSignatureUrl, setSavedSignatureUrl] = useState<string | null>(existingSignatureUrl)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [strokeColor, setStrokeColor] = useState('#4A1A6B')
@@ -239,6 +237,11 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
   ]
 
   useEffect(() => {
+    setSavedSignatureUrl(existingSignatureUrl)
+  }, [existingSignatureUrl])
+
+  useEffect(() => {
+    if (!isExpanded) return
     const canvas = canvasRef.current
     if (!canvas) return
     const resize = () => {
@@ -253,16 +256,16 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
         ctx.fillRect(0, 0, rect.width, rect.height)
         ctx.strokeStyle = 'rgba(201, 169, 110, 0.12)'
         ctx.lineWidth = 0.5
-        for (let y = 24; y < rect.height; y += 22) {
-          ctx.beginPath(); ctx.moveTo(12, y); ctx.lineTo(rect.width - 12, y); ctx.stroke()
+        for (let y = 20; y < rect.height; y += 18) {
+          ctx.beginPath(); ctx.moveTo(8, y); ctx.lineTo(rect.width - 8, y); ctx.stroke()
         }
       }
     }
-    resize()
+    setTimeout(resize, 50)
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [])
+  }, [isExpanded])
 
   const getPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -273,6 +276,7 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault()
+    e.stopPropagation()
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.setPointerCapture(e.pointerId)
@@ -284,6 +288,7 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return
     e.preventDefault()
+    e.stopPropagation()
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -316,49 +321,94 @@ function SignaturePad({ onSave }: { onSave: (file: File) => void }) {
     ctx.fillRect(0, 0, rect.width, rect.height)
     ctx.strokeStyle = 'rgba(201, 169, 110, 0.12)'
     ctx.lineWidth = 0.5
-    for (let y = 24; y < rect.height; y += 22) {
-      ctx.beginPath(); ctx.moveTo(12, y); ctx.lineTo(rect.width - 12, y); ctx.stroke()
+    for (let y = 20; y < rect.height; y += 18) {
+      ctx.beginPath(); ctx.moveTo(8, y); ctx.lineTo(rect.width - 8, y); ctx.stroke()
     }
     setHasContent(false)
   }
 
-  const saveSignature = () => {
+  const saveSignature = async () => {
     const canvas = canvasRef.current
     if (!canvas || !hasContent) return
-    canvas.toBlob((blob) => {
-      if (!blob) return
+    setIsSaving(true)
+    try {
+      const blob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((b) => { if (b) resolve(b) }, 'image/png', 1.0)
+      })
       const file = new File([blob], `assinatura-${Date.now()}.png`, { type: 'image/png' })
-      onSave(file)
-      clearCanvas()
-    }, 'image/png', 1.0)
+      const formData = new FormData()
+      formData.append('signature', file)
+      formData.append('photoId', photoId)
+      formData.append('guestName', 'Convidado')
+
+      const res = await fetch('/api/photos/signature', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao salvar assinatura')
+
+      setSavedSignatureUrl(data.signature.cloudinaryUrl)
+      setIsExpanded(false)
+      setHasContent(false)
+      toast({ title: 'Assinatura salva!', description: 'Sua assinatura foi adicionada!' })
+      onSignatureSaved()
+    } catch {
+      toast({ title: 'Erro', description: 'Não foi possível salvar.', variant: 'destructive' })
+    } finally { setIsSaving(false) }
+  }
+
+  // If there's a saved signature, show it
+  if (savedSignatureUrl) {
+    return (
+      <div className="flex items-center gap-2 py-1.5 px-2" style={{ borderTop: '1px solid rgba(201,169,110,0.15)' }}>
+        <img src={savedSignatureUrl} alt="Assinatura" className="h-8 max-w-[60%] object-contain" />
+        <span className="text-[8px] italic opacity-40" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>assinatura</span>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-1.5">
-      <div className="relative rounded-lg overflow-hidden shadow-inner" style={{ border: '2px solid rgba(201,169,110,0.3)' }}>
-        <canvas ref={canvasRef} className="signature-canvas w-full" style={{ height: '160px', background: '#FFFAF3' }}
-          onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} />
-      </div>
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="flex gap-1">
-          {colors.map((c) => (
-            <button key={c.value} type="button" onClick={() => setStrokeColor(c.value)}
-              className={`w-7 h-7 rounded-full border-2 transition-all ${strokeColor === c.value ? 'scale-110 shadow-md' : 'hover:scale-105'}`}
-              style={{ backgroundColor: c.value, borderColor: strokeColor === c.value ? 'var(--wedding-gold)' : 'transparent' }}
-              aria-label={`Cor ${c.label}`} />
-          ))}
+    <div style={{ borderTop: '1px solid rgba(201,169,110,0.15)' }}>
+      {!isExpanded ? (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(true)}
+          className="signature-tap-area w-full flex items-center justify-center gap-1.5 py-2 px-2 text-[10px] italic"
+          style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+        >
+          <PenLine className="w-3 h-3" style={{ color: 'var(--wedding-gold)' }} />
+          Toque para assinar
+        </button>
+      ) : (
+        <div className="p-2 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+          <div className="relative rounded-lg overflow-hidden shadow-inner" style={{ border: '2px solid rgba(201,169,110,0.3)' }}>
+            <canvas ref={canvasRef} className="signature-canvas w-full" style={{ height: '100px', background: '#FFFAF3' }}
+              onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} />
+          </div>
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex gap-1">
+              {colors.map((c) => (
+                <button key={c.value} type="button" onClick={() => setStrokeColor(c.value)}
+                  className={`w-5 h-5 rounded-full border-2 transition-all ${strokeColor === c.value ? 'scale-110 shadow-md' : 'hover:scale-105'}`}
+                  style={{ backgroundColor: c.value, borderColor: strokeColor === c.value ? 'var(--wedding-gold)' : 'transparent' }}
+                  aria-label={`Cor ${c.label}`} />
+              ))}
+            </div>
+            <div className="flex gap-1">
+              <Button type="button" variant="outline" size="sm" onClick={clearCanvas} className="rounded-lg text-[9px] h-6 px-1.5"
+                style={{ borderColor: 'var(--wedding-lavender)', color: 'var(--wedding-purple)' }}>
+                <Eraser className="w-2.5 h-2.5 mr-0.5" /> Limpar
+              </Button>
+              <Button type="button" size="sm" onClick={saveSignature} disabled={!hasContent || isSaving} className="rounded-lg text-[9px] h-6 px-1.5"
+                style={{ backgroundColor: 'var(--wedding-gold)', color: 'white' }}>
+                {isSaving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5 mr-0.5" />}
+                {!isSaving && 'Assinar'}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setIsExpanded(false); clearCanvas() }} className="rounded-lg h-6 w-6 p-0">
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-1.5">
-          <Button type="button" variant="outline" size="sm" onClick={clearCanvas} className="rounded-lg text-[10px] h-7 px-2"
-            style={{ borderColor: 'var(--wedding-lavender)', color: 'var(--wedding-purple)' }}>
-            <Eraser className="w-3 h-3 mr-0.5" /> Limpar
-          </Button>
-          <Button type="button" size="sm" onClick={saveSignature} disabled={!hasContent} className="rounded-lg text-[10px] h-7 px-2"
-            style={{ backgroundColor: 'var(--wedding-gold)', color: 'white' }}>
-            <Upload className="w-3 h-3 mr-0.5" /> Assinar
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -372,8 +422,7 @@ export default function Home() {
   // ─── State ─────────────────────────────────────────
   const [photos, setPhotos] = useState<Photo[]>([])
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(true)
-  const [viewMode, setViewMode] = useState<ViewMode>('book')
-  const [currentSpread, setCurrentSpread] = useState(0)
+  const [currentPage, setCurrentPage] = useState(0)
   const [isFlipping, setIsFlipping] = useState(false)
   const [isPinVerified, setIsPinVerified] = useState(false)
   const [showPinModal, setShowPinModal] = useState(false)
@@ -384,15 +433,18 @@ export default function Home() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFrame, setSelectedFrame] = useState<FrameStyle>('classic')
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [flipAngle, setFlipAngle] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
 
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const socketRef = useRef<ReturnType<typeof io> | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const flipPageRef = useRef<HTMLDivElement>(null)
-  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bookContainerRef = useRef<HTMLDivElement>(null)
+  const dragStartRef = useRef<{ x: number; time: number } | null>(null)
+  const isDraggingRef = useRef(false)
 
   // ─── Check mobile ─────────────────────────────────
   useEffect(() => {
@@ -410,36 +462,52 @@ export default function Home() {
 
   // ─── Compute album pages ───────────────────────────
   const sortedPhotos = [...photos].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  const signaturePhotos = sortedPhotos.filter((p) => p.originalName.startsWith('assinatura-') || p.guestName.includes('|signature'))
-  const regularPhotos = sortedPhotos.filter((p) => !p.originalName.startsWith('assinatura-') && !p.guestName.includes('|signature'))
+  const regularPhotos = sortedPhotos.filter((p) => !p.isSignature)
+  const signaturePhotos = sortedPhotos.filter((p) => p.isSignature)
 
-  // Each spread shows 2 pages (left + right). On mobile single page mode.
-  const photosPerPage = isMobile ? 1 : 2
-  const pages: { photos: Photo[]; isSignature: boolean }[] = []
+  // Build pages for the book
+  // Page 0: Cover
+  // Page 1: Welcome
+  // Pages 2..N: Photo pages (1 photo per page)
+  // Last-1: Signatures page
+  // Last: Back cover
+  const bookPages: { type: 'cover' | 'welcome' | 'photo' | 'signatures' | 'backcover'; photo?: Photo; allSignatures?: Photo[] }[] = []
 
-  // Build pages: each page holds 1 photo with message/signature space
-  for (let i = 0; i < regularPhotos.length; i++) {
-    pages.push({ photos: [regularPhotos[i]], isSignature: false })
+  bookPages.push({ type: 'cover' })
+  bookPages.push({ type: 'welcome' })
+
+  for (const photo of regularPhotos) {
+    bookPages.push({ type: 'photo', photo })
   }
-  // Always have at least one empty page
-  if (pages.length === 0) pages.push({ photos: [], isSignature: false })
-  // Signature page at end
-  if (signaturePhotos.length > 0 || true) {
-    pages.push({ photos: signaturePhotos, isSignature: true })
+
+  if (regularPhotos.length === 0) {
+    bookPages.push({ type: 'photo' }) // empty placeholder
   }
 
-  // Spreads for book view (2 pages per spread on desktop)
-  const spreads: { left: typeof pages[0] | null; right: typeof pages[0] | null }[] = []
-  // Cover spread
-  spreads.push({ left: null, right: null }) // cover
-  // Photo spreads
-  for (let i = 0; i < pages.length; i += 2) {
-    spreads.push({ left: pages[i], right: pages[i + 1] || { photos: [], isSignature: false } })
-  }
-  // Back cover
-  spreads.push({ left: null, right: null })
+  bookPages.push({ type: 'signatures', allSignatures: signaturePhotos })
+  bookPages.push({ type: 'backcover' })
 
-  const totalSpreads = spreads.length
+  const totalPages = bookPages.length
+
+  // On desktop, we show 2 pages side-by-side (spread view)
+  // On mobile, we show 1 page at a time
+  // currentPage is the LEFT page index on desktop, or the single page on mobile
+
+  const getSpreadPages = () => {
+    if (isMobile) {
+      return { left: bookPages[currentPage], right: null }
+    }
+    // Desktop: show 2 pages at a time
+    // Cover is special: only left side
+    const leftIdx = currentPage
+    const rightIdx = currentPage + 1
+    return {
+      left: bookPages[leftIdx],
+      right: rightIdx < totalPages ? bookPages[rightIdx] : null,
+    }
+  }
+
+  const maxPage = isMobile ? totalPages - 1 : totalPages - 2
 
   // ─── Fetch photos ──────────────────────────────────
   const fetchPhotos = useCallback(async () => {
@@ -455,74 +523,121 @@ export default function Home() {
     const socket = io('/?XTransformPort=3001', { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: Infinity, reconnectionDelay: 2000 })
     socketRef.current = socket
     socket.on('photo_update', (data: { type: string; photo: Photo }) => {
-      if (data.type === 'new_photo') {
+      if (data.type === 'new_photo' || data.type === 'new_signature') {
         setPhotos((prev) => prev.some((p) => p.id === data.photo.id) ? prev : [...prev, data.photo])
-        toast({ title: 'Nova foto!', description: `${parseGuestName(data.photo.guestName).name} enviou uma foto` })
+        toast({ title: data.type === 'new_signature' ? 'Nova assinatura!' : 'Nova foto!', description: 'O álbum foi atualizado' })
       }
     })
-    pollingRef.current = setInterval(fetchPhotos, 10000)
+    pollingRef.current = setInterval(fetchPhotos, 15000)
     return () => { socket.disconnect(); if (pollingRef.current) clearInterval(pollingRef.current) }
   }, [fetchPhotos, toast])
 
-  // ─── 3D Flip Navigation (CodePen-style) ───────────
-  const performFlipNext = useCallback(() => {
-    if (isFlipping || currentSpread >= totalSpreads - 1) return
-    setIsFlipping(true)
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = flipPageRef.current
-        if (el) {
-          el.style.transition = `transform ${FLIP_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
-          el.style.transform = 'rotateY(-180deg)'
+  // ─── Drag-to-Flip Logic ───────────────────────────
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (isFlipping) return
+    const target = e.currentTarget as HTMLDivElement
+    target.setPointerCapture(e.pointerId)
+    dragStartRef.current = { x: e.clientX, time: Date.now() }
+    isDraggingRef.current = false
+    setIsDragging(false)
+  }, [isFlipping])
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragStartRef.current || isFlipping) return
+    const deltaX = dragStartRef.current.x - e.clientX
+    const container = bookContainerRef.current
+    if (!container) return
+
+    const pageWidth = isMobile ? container.offsetWidth : container.offsetWidth / 2
+    const absDelta = Math.abs(deltaX)
+
+    if (absDelta > 5) {
+      isDraggingRef.current = true
+      setIsDragging(true)
+    }
+
+    // Calculate flip angle based on drag direction and distance
+    let angle: number
+    if (deltaX > 0) {
+      // Dragging left = flipping forward (right page turns)
+      angle = Math.min((deltaX / pageWidth) * 180, 180)
+    } else {
+      // Dragging right = flipping backward (left page turns)
+      angle = Math.max((deltaX / pageWidth) * 180, -180)
+    }
+    setFlipAngle(angle)
+  }, [isFlipping, isMobile])
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!dragStartRef.current || isFlipping) {
+      dragStartRef.current = null
+      setIsDragging(false)
+      setFlipAngle(0)
+      return
+    }
+
+    const deltaX = dragStartRef.current.x - e.clientX
+    const container = bookContainerRef.current
+    dragStartRef.current = null
+
+    if (!isDraggingRef.current) {
+      setIsDragging(false)
+      setFlipAngle(0)
+      return
+    }
+
+    const pageWidth = container ? (isMobile ? container.offsetWidth : container.offsetWidth / 2) : 300
+    const absAngle = Math.abs(flipAngle)
+
+    if (absAngle > 90) {
+      // Past 50% threshold - complete the flip
+      setIsFlipping(true)
+      // Animate to completion
+      const targetAngle = deltaX > 0 ? 180 : -180
+      setFlipAngle(targetAngle)
+      setTimeout(() => {
+        if (deltaX > 0 && currentPage < maxPage) {
+          setCurrentPage(prev => isMobile ? prev + 1 : prev + 2)
+        } else if (deltaX < 0 && currentPage > 0) {
+          setCurrentPage(prev => isMobile ? prev - 1 : prev - 2)
         }
-      })
-    })
-    if (flipTimeoutRef.current) clearTimeout(flipTimeoutRef.current)
-    flipTimeoutRef.current = setTimeout(() => { setCurrentSpread(prev => prev + 1); setIsFlipping(false) }, FLIP_DURATION + 50)
-  }, [isFlipping, currentSpread, totalSpreads])
-
-  const performFlipPrev = useCallback(() => {
-    if (isFlipping || currentSpread <= 0) return
-    setIsFlipping(true)
-    // On prev, we set currentSpread back and animate from -180 to 0
-    requestAnimationFrame(() => {
-      const el = flipPageRef.current
-      if (el) {
-        el.style.transition = 'none'
-        el.style.transform = 'rotateY(-180deg)'
-        void el.offsetHeight // force reflow
-        el.style.transition = `transform ${FLIP_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
-        el.style.transform = 'rotateY(0deg)'
-      }
-    })
-    if (flipTimeoutRef.current) clearTimeout(flipTimeoutRef.current)
-    flipTimeoutRef.current = setTimeout(() => { setCurrentSpread(prev => prev - 1); setIsFlipping(false) }, FLIP_DURATION + 50)
-  }, [isFlipping, currentSpread])
-
-  const goToSpread = useCallback((index: number) => {
-    if (isFlipping || index < 0 || index >= totalSpreads) return
-    setCurrentSpread(index)
-  }, [isFlipping, totalSpreads])
+        setFlipAngle(0)
+        setIsFlipping(false)
+        setIsDragging(false)
+      }, FLIP_ANIM_DURATION)
+    } else {
+      // Spring back
+      setFlipAngle(0)
+      setTimeout(() => setIsDragging(false), 300)
+    }
+  }, [isFlipping, currentPage, maxPage, flipAngle, isMobile])
 
   // ─── Keyboard navigation ──────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') performFlipNext()
-      if (e.key === 'ArrowLeft') performFlipPrev()
+      if (isFlipping) return
+      if (e.key === 'ArrowRight' && currentPage < maxPage) {
+        setIsFlipping(true)
+        setFlipAngle(180)
+        setTimeout(() => {
+          setCurrentPage(prev => isMobile ? prev + 1 : prev + 2)
+          setFlipAngle(0)
+          setIsFlipping(false)
+        }, FLIP_ANIM_DURATION)
+      }
+      if (e.key === 'ArrowLeft' && currentPage > 0) {
+        setIsFlipping(true)
+        setFlipAngle(-180)
+        setTimeout(() => {
+          setCurrentPage(prev => isMobile ? prev - 1 : prev - 2)
+          setFlipAngle(0)
+          setIsFlipping(false)
+        }, FLIP_ANIM_DURATION)
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [performFlipNext, performFlipPrev])
-
-  // ─── Touch/swipe ──────────────────────────────────
-  const touchStartRef = useRef<number | null>(null)
-  const handleTouchStart = (e: React.TouchEvent) => { touchStartRef.current = e.touches[0].clientX }
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartRef.current === null) return
-    const diff = touchStartRef.current - e.changedTouches[0].clientX
-    if (Math.abs(diff) > 50) { diff > 0 ? performFlipNext() : performFlipPrev() }
-    touchStartRef.current = null
-  }
+  }, [isFlipping, currentPage, maxPage, isMobile])
 
   // ─── Upload handlers ──────────────────────────────
   const requestUpload = () => {
@@ -545,10 +660,9 @@ export default function Home() {
     setSelectedFile(file); setPreviewUrl(URL.createObjectURL(file))
   }
 
-  // Compress image before upload to reduce memory usage
   const compressImage = (file: File, maxWidth = 1200, quality = 0.8): Promise<File> => {
     return new Promise((resolve) => {
-      if (file.size < 500 * 1024) { resolve(file); return } // Skip small files
+      if (file.size < 500 * 1024) { resolve(file); return }
       const img = new Image()
       const url = URL.createObjectURL(file)
       img.onload = () => {
@@ -575,43 +689,16 @@ export default function Home() {
     if (!selectedFile) { toast({ title: 'Selecione uma foto', variant: 'destructive' }); return }
     setIsUploading(true)
     try {
-      // Compress image first
       const compressedFile = await compressImage(selectedFile)
-      const msgEncoded = guestMessage.trim() ? encodeURIComponent(guestMessage.trim()) : ''
-      const guestNameStr = `${guestName.trim() || 'Convidado'}|frame:${selectedFrame}${msgEncoded ? `|msg:${msgEncoded}` : ''}`
+      const formData = new FormData()
+      formData.append('photo', compressedFile)
+      formData.append('guestName', guestName.trim() || 'Convidado')
+      formData.append('frame', selectedFrame)
+      formData.append('message', guestMessage.trim())
 
-      // Try FormData upload first, fall back to base64
-      let success = false
-
-      // Method 1: FormData
-      try {
-        const formData = new FormData()
-        formData.append('photo', compressedFile)
-        formData.append('guestName', guestNameStr)
-        const res = await fetch('/api/photos', { method: 'POST', body: formData })
-        if (res.ok) { success = true }
-      } catch {}
-
-      // Method 2: Base64 JSON if FormData failed
-      if (!success) {
-        const reader = new FileReader()
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(compressedFile)
-        })
-        const res = await fetch('/api/photos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            photo: base64,
-            filename: compressedFile.name,
-            mimeType: compressedFile.type || 'image/jpeg',
-            guestName: guestNameStr,
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Erro ao enviar foto')
-      }
+      const res = await fetch('/api/photos', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar foto')
 
       toast({ title: 'Foto enviada!', description: 'Sua foto foi adicionada ao álbum!' })
       setSelectedFile(null); setPreviewUrl(null); setGuestName(''); setGuestMessage('')
@@ -623,18 +710,6 @@ export default function Home() {
     } finally { setIsUploading(false) }
   }
 
-  const handleSignatureSave = async (file: File) => {
-    try {
-      const formData = new FormData()
-      formData.append('photo', file)
-      formData.append('guestName', `${guestName.trim() || 'Convidado'}|frame:classic|signature`)
-      const res = await fetch('/api/photos', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error('Erro ao salvar assinatura')
-      toast({ title: 'Assinatura salva!', description: 'Sua mensagem foi adicionada ao álbum!' })
-      await fetchPhotos()
-    } catch { toast({ title: 'Erro', description: 'Não foi possível salvar.', variant: 'destructive' }) }
-  }
-
   const clearPreview = () => {
     setSelectedFile(null)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
@@ -643,14 +718,67 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // ─── Render single photo page ──────────────────────
-  const renderPhotoPage = (pagePhotos: Photo[], side: 'left' | 'right' | 'single') => (
+  // ─── Find signature for a photo ────────────────────
+  const getSignatureForPhoto = (photoId: string) => {
+    return signaturePhotos.find((s) => s.signatureForPhotoId === photoId)
+  }
+
+  // ─── Render Cover Page ─────────────────────────────
+  const renderCover = () => (
+    <div className="w-full h-full relative flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
+      <div className="absolute inset-3 sm:inset-4 border border-glow rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.25)' }} />
+      <div className="absolute inset-5 sm:inset-6 border rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.12)' }} />
+      <div className="relative z-10 text-center">
+        <div className="mb-3 sm:mb-4"><Monogram size="lg" /></div>
+        <h1 className="gold-shimmer text-2xl sm:text-4xl md:text-5xl font-light mb-1 sm:mb-2" style={{ fontFamily: 'var(--font-playfair), Georgia, serif', letterSpacing: '0.05em' }}>
+          Patrícia
+        </h1>
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+          <div className="h-px w-8 sm:w-16" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.4 }} />
+          <Crown className="w-3 h-3 sm:w-5 sm:h-5" style={{ color: 'var(--wedding-gold)', opacity: 0.6 }} />
+          <div className="h-px w-8 sm:w-16" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.4 }} />
+        </div>
+        <h1 className="gold-shimmer text-2xl sm:text-4xl md:text-5xl font-light mb-3 sm:mb-4" style={{ fontFamily: 'var(--font-playfair), Georgia, serif', letterSpacing: '0.05em' }}>
+          Samuel
+        </h1>
+        <OrnamentalDivider color="var(--wedding-gold)" />
+        <p className="text-[10px] sm:text-sm tracking-[0.3em] uppercase mt-2 sm:mt-3" style={{ color: 'rgba(201,169,110,0.5)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+          {WEDDING_DATE}
+        </p>
+      </div>
+    </div>
+  )
+
+  // ─── Render Welcome Page ───────────────────────────
+  const renderWelcome = () => (
+    <div className="w-full h-full page-texture flex flex-col items-center justify-center p-4 sm:p-6 relative"
+      style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
+      <div className="text-center max-w-[90%]">
+        <Gem className="w-5 h-5 sm:w-7 sm:h-7 mx-auto mb-3 sm:mb-4" style={{ color: 'var(--wedding-gold)' }} />
+        <h2 className="text-lg sm:text-2xl font-light mb-2 sm:mb-3" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
+          Bem-vindos ao Nosso Álbum
+        </h2>
+        <OrnamentalDivider color="var(--wedding-gold)" className="mb-2 sm:mb-3" />
+        <p className="text-[10px] sm:text-sm mb-3 sm:mb-4 leading-relaxed italic" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+          Este álbum foi criado com todo nosso amor para guardar os melhores momentos do dia mais especial das nossas vidas.
+        </p>
+        <OrnamentalDivider color="var(--wedding-gold)" className="mb-2 sm:mb-3" />
+        <div className="mt-2 sm:mt-3">
+          <Badge className="px-3 py-1 rounded-full text-[10px] sm:text-xs" style={{ backgroundColor: 'var(--wedding-lavender-soft)', color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+            <ImageIcon className="w-3 h-3 mr-1" />
+            {regularPhotos.length} {regularPhotos.length === 1 ? 'foto' : 'fotos'} no álbum
+          </Badge>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ─── Render Photo Page ─────────────────────────────
+  const renderPhotoPage = (photo?: Photo) => (
     <div className="w-full h-full page-texture flex flex-col relative"
-      style={{
-        background: `linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)`,
-        borderRadius: side === 'left' ? '2px 0 0 2px' : side === 'right' ? '0 2px 2px 0' : '2px',
-      }}>
-      {pagePhotos.length === 0 ? (
+      style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
+      {!photo ? (
         <div className="flex-1 flex flex-col items-center justify-center opacity-25 p-4">
           <Feather className="w-6 h-6 sm:w-8 sm:h-8 mb-2" style={{ color: 'var(--wedding-lavender)' }} />
           <p className="text-[10px] sm:text-xs italic text-center" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
@@ -659,491 +787,446 @@ export default function Home() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col p-2 sm:p-3 md:p-4 min-h-0">
-          {pagePhotos.map((photo) => {
-            const p = parseGuestName(photo.guestName)
-            return (
-              <div key={photo.id} className="flex-1 flex flex-col min-h-0 elegant-fade-in">
-                {/* Photo with frame */}
-                <div className="flex-1 flex items-center justify-center min-h-0" style={{ maxHeight: '55%' }}>
-                  <PhotoFrame
-                    src={`/uploads/${photo.filename}`} alt={`Foto de ${p.name}`} frameStyle={p.frame}
-                    className="max-w-[95%] max-h-full" onClick={() => setSelectedPhoto(photo)}
-                  />
-                </div>
-                {/* Guest name */}
-                <p className="text-center text-[11px] sm:text-[13px] mt-1 italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                  — {p.name}
-                </p>
-                {/* Divider */}
-                <div className="my-1">
+          <div key={photo.id} className="flex-1 flex flex-col min-h-0 elegant-fade-in">
+            {/* Photo with frame */}
+            <div className="flex-1 flex items-center justify-center min-h-0" style={{ maxHeight: '50%' }}>
+              <PhotoFrame
+                src={photo.cloudinaryUrl} alt={`Foto de ${parseGuestData(photo.guestName, photo.frame, photo.message).name}`}
+                frameStyle={photo.frame || 'classic'}
+                className="max-w-[92%] max-h-full"
+              />
+            </div>
+            {/* Guest name */}
+            <p className="text-center text-[11px] sm:text-[13px] mt-1 italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+              — {parseGuestData(photo.guestName, photo.frame, photo.message).name}
+            </p>
+            {/* Message */}
+            {photo.message && (
+              <>
+                <div className="my-0.5">
                   <OrnamentalDivider color="var(--wedding-gold)" />
                 </div>
-                {/* Message/signature area - this is the space for guests to write */}
-                <div className="message-lines px-1.5 sm:px-2 py-0.5 sm:py-1 rounded flex-1 min-h-[40px]" style={{ maxHeight: '30%' }}>
-                  {p.message ? (
-                    <p className="text-[10px] sm:text-[12px] italic leading-6 sm:leading-7" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                      &ldquo;{p.message}&rdquo;
-                    </p>
-                  ) : (
-                    <p className="text-[9px] sm:text-[11px] italic leading-6 sm:leading-7 opacity-20" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                      Espaço para mensagem e assinatura...
-                    </p>
-                  )}
+                <div className="message-lines px-1.5 sm:px-2 py-0.5 rounded" style={{ maxHeight: '20%' }}>
+                  <p className="text-[10px] sm:text-[12px] italic leading-7" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+                    &ldquo;{photo.message}&rdquo;
+                  </p>
                 </div>
-                {/* Date */}
-                <p className="text-[8px] sm:text-[10px] text-right mt-0.5 opacity-25" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                  {new Date(photo.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                </p>
-              </div>
-            )
-          })}
+              </>
+            )}
+            {/* Inline signature area */}
+            <div className="mt-auto">
+              <InlineSignatureArea
+                photoId={photo.id}
+                existingSignatureUrl={getSignatureForPhoto(photo.id)?.cloudinaryUrl || null}
+                onSignatureSaved={fetchPhotos}
+              />
+            </div>
+            {/* Date */}
+            <p className="text-[8px] sm:text-[10px] text-right mt-0.5 opacity-25" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+              {new Date(photo.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
         </div>
       )}
     </div>
   )
 
-  // ─── Render signature page ────────────────────────
-  const renderSignaturePage = () => (
-    <div className="w-full h-full page-texture flex flex-col p-2 sm:p-3 md:p-4 relative"
+  // ─── Render Signatures Page ────────────────────────
+  const renderSignaturesPage = (signatures?: Photo[]) => (
+    <div className="w-full h-full page-texture flex flex-col items-center justify-center p-3 sm:p-4 relative"
       style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
-      <div className="text-center mb-1.5 sm:mb-2">
-        <Feather className="w-4 h-4 sm:w-5 sm:h-5 mx-auto mb-0.5" style={{ color: 'var(--wedding-gold)' }} />
+      <div className="text-center mb-2">
+        <Feather className="w-4 h-4 sm:w-5 sm:h-5 mx-auto mb-1" style={{ color: 'var(--wedding-gold)' }} />
         <h3 className="text-xs sm:text-sm font-semibold" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-          Deixe sua Mensagem
+          Assinaturas &amp; Mensagens
         </h3>
       </div>
-      <div className="mb-1.5 sm:mb-2">
-        <div className="relative">
-          <Users className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3" style={{ color: 'var(--wedding-gold)' }} />
-          <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Seu nome"
-            className="pl-7 h-8 text-[11px] rounded-lg" style={{ borderColor: 'rgba(201,169,110,0.3)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }} maxLength={50} />
-        </div>
-      </div>
-      <div className="flex-1 min-h-0">
-        <SignaturePad onSave={handleSignatureSave} />
-      </div>
-    </div>
-  )
-
-  // ─── Render LEFT half of a spread ─────────────────
-  const renderLeftHalf = (spreadIndex: number) => {
-    const spread = spreads[spreadIndex]
-    // Cover
-    if (spreadIndex === 0) {
-      return (
-        <div className="w-full h-full relative flex flex-col items-center justify-center p-3 sm:p-6 overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
-          <div className="absolute inset-3 sm:inset-4 border border-glow rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.25)' }} />
-          <div className="absolute inset-5 sm:inset-6 border rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.12)' }} />
-          <div className="relative z-10 text-center">
-            <div className="mb-2 sm:mb-4"><Monogram size="lg" /></div>
-            <h1 className="gold-shimmer text-2xl sm:text-4xl md:text-5xl font-light mb-1 sm:mb-2" style={{ fontFamily: 'var(--font-playfair), Georgia, serif', letterSpacing: '0.05em' }}>
-              Patrícia
-            </h1>
-            <div className="flex items-center justify-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-              <div className="h-px w-8 sm:w-16" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.4 }} />
-              <Crown className="w-3 h-3 sm:w-5 sm:h-5" style={{ color: 'var(--wedding-gold)', opacity: 0.6 }} />
-              <div className="h-px w-8 sm:w-16" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.4 }} />
-            </div>
-            <h1 className="gold-shimmer text-2xl sm:text-4xl md:text-5xl font-light mb-2 sm:mb-4" style={{ fontFamily: 'var(--font-playfair), Georgia, serif', letterSpacing: '0.05em' }}>
-              Samuel
-            </h1>
-            <OrnamentalDivider color="var(--wedding-gold)" />
-            <p className="text-[10px] sm:text-sm tracking-[0.3em] uppercase mt-2 sm:mt-3" style={{ color: 'rgba(201,169,110,0.5)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              {WEDDING_DATE}
-            </p>
-          </div>
-        </div>
-      )
-    }
-    // Back cover
-    if (spreadIndex === totalSpreads - 1) {
-      return (
-        <div className="w-full h-full page-texture flex flex-col items-center justify-center p-3 sm:p-6 relative"
-          style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
-          <div className="text-center">
-            <div className="mb-3"><Monogram size="sm" /></div>
-            <OrnamentalDivider color="var(--wedding-gold)" />
-            <h2 className="text-lg sm:text-2xl font-light mt-3 sm:mt-4 mb-2 sm:mb-3" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-              Obrigado
-            </h2>
-            <p className="text-[11px] sm:text-sm leading-relaxed mb-2 sm:mb-3 italic" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              Agradecemos a todos que fizeram parte deste momento mágico.
-            </p>
-            <OrnamentalDivider color="var(--wedding-gold)" />
-            <p className="text-[10px] sm:text-xs mt-2 sm:mt-3 italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              Com todo nosso amor,<br />
-              <span style={{ color: 'var(--wedding-gold-dark)', fontFamily: 'var(--font-playfair), Georgia, serif', fontSize: '12px' }}>Patrícia & Samuel</span>
-            </p>
-          </div>
-        </div>
-      )
-    }
-    // Photo or signature page
-    if (spread?.left?.isSignature) return renderSignaturePage()
-    return renderPhotoPage(spread?.left?.photos || [], 'left')
-  }
-
-  // ─── Render RIGHT half of a spread ────────────────
-  const renderRightHalf = (spreadIndex: number) => {
-    const spread = spreads[spreadIndex]
-    // Cover right - Welcome
-    if (spreadIndex === 0) {
-      return (
-        <div className="w-full h-full page-texture flex flex-col items-center justify-center p-3 sm:p-6 relative"
-          style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
-          <div className="text-center max-w-[90%]">
-            <Gem className="w-5 h-5 sm:w-7 sm:h-7 mx-auto mb-2 sm:mb-4" style={{ color: 'var(--wedding-gold)' }} />
-            <h2 className="text-lg sm:text-2xl font-light mb-2 sm:mb-3" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-              Bem-vindos ao Nosso Álbum
-            </h2>
-            <OrnamentalDivider color="var(--wedding-gold)" className="mb-2 sm:mb-3" />
-            <p className="text-[10px] sm:text-sm mb-3 sm:mb-4 leading-relaxed italic" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              Este álbum foi criado com todo nosso amor para guardar os melhores momentos do dia mais especial das nossas vidas.
-            </p>
-            <OrnamentalDivider color="var(--wedding-gold)" className="mb-2 sm:mb-3" />
-            <div className="mt-2 sm:mt-3">
-              <Badge className="px-3 py-1 rounded-full text-[10px] sm:text-xs" style={{ backgroundColor: 'var(--wedding-lavender-soft)', color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                <ImageIcon className="w-3 h-3 mr-1" />
-                {regularPhotos.length} {regularPhotos.length === 1 ? 'foto' : 'fotos'} no álbum
-              </Badge>
-            </div>
-          </div>
-        </div>
-      )
-    }
-    // Back cover right
-    if (spreadIndex === totalSpreads - 1) {
-      return (
-        <div className="w-full h-full relative flex flex-col items-center justify-center p-3 sm:p-6 overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
-          <div className="absolute inset-3 sm:inset-4 border border-glow rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.15)' }} />
-          <div className="relative z-10 text-center">
-            <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-              <div className="h-px w-8 sm:w-12" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.3 }} />
-              <Crown className="w-3 h-3 sm:w-4 sm:h-4" style={{ color: 'var(--wedding-gold)', opacity: 0.5 }} />
-              <div className="h-px w-8 sm:w-12" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.3 }} />
-            </div>
-            <p className="gold-shimmer text-sm sm:text-lg tracking-[0.3em] uppercase" style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-              Patrícia & Samuel
-            </p>
-            <OrnamentalDivider color="var(--wedding-gold)" className="my-2 sm:my-3" />
-            <p className="text-[10px] sm:text-xs" style={{ color: 'rgba(201,169,110,0.4)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              {WEDDING_DATE}
-            </p>
-          </div>
-        </div>
-      )
-    }
-    // Photo or signature page
-    if (spread?.right?.isSignature) return renderSignaturePage()
-    return renderPhotoPage(spread?.right?.photos || [], 'right')
-  }
-
-  // ─── Grid View ────────────────────────────────────
-  const renderGridView = () => (
-    <div className="columns-2 sm:columns-3 md:columns-4 gap-3 space-y-3">
-      {isLoadingPhotos ? (
-        <div className="col-span-full flex flex-col items-center py-12 gap-2">
-          <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--wedding-gold)' }} />
-          <p className="text-xs" style={{ color: 'var(--wedding-purple)' }}>Carregando...</p>
-        </div>
-      ) : regularPhotos.length === 0 ? (
-        <div className="col-span-full text-center py-12">
-          <div className="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ backgroundColor: 'var(--wedding-lavender-soft)' }}>
-            <Feather className="w-8 h-8" style={{ color: 'var(--wedding-gold)' }} />
-          </div>
-          <p className="text-base font-light mb-1" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-            Seja o primeiro!
-          </p>
-        </div>
-      ) : (
-        regularPhotos.map((photo) => {
-          const p = parseGuestName(photo.guestName)
-          return (
-            <motion.div key={photo.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="break-inside-avoid">
-              <div className="overflow-hidden cursor-pointer group rounded-lg shadow-sm hover:shadow-lg transition-all bg-white"
-                onClick={() => setSelectedPhoto(photo)}>
-                <img src={`/uploads/${photo.filename}`} alt={`Foto de ${p.name}`} className="w-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" style={{ minHeight: '100px' }} />
-                <div className="p-2">
-                  <p className="text-[11px] font-medium truncate" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>{p.name}</p>
-                  {p.message && (
-                    <p className="text-[10px] mt-0.5 italic line-clamp-2" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>&ldquo;{p.message}&rdquo;</p>
-                  )}
-                </div>
+      <div className="flex-1 w-full overflow-y-auto album-scroll min-h-0">
+        {signatures && signatures.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2 p-1">
+            {signatures.map((sig) => (
+              <div key={sig.id} className="elegant-fade-in flex flex-col items-center p-1.5 rounded-lg" style={{ background: 'rgba(243,232,255,0.3)' }}>
+                <img src={sig.cloudinaryUrl} alt="Assinatura" className="h-10 sm:h-14 object-contain mb-0.5" />
+                <p className="text-[8px] italic opacity-60" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+                  {parseGuestData(sig.guestName).name}
+                </p>
               </div>
-            </motion.div>
-          )
-        })
-      )}
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] italic text-center opacity-30 py-4" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+            Nenhuma assinatura ainda. Toque &ldquo;Toque para assinar&rdquo; abaixo de uma foto!
+          </p>
+        )}
+      </div>
     </div>
   )
 
-  // ═══════════════════════════════════════════════════
-  // MAIN RENDER
-  // ═══════════════════════════════════════════════════
+  // ─── Render Back Cover ─────────────────────────────
+  const renderBackCover = () => (
+    <div className="w-full h-full relative flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #4A1A6B 0%, #3D1452 35%, #2D1B3D 70%, #1A0E2E 100%)' }}>
+      <div className="absolute inset-3 sm:inset-4 border border-glow rounded-sm" style={{ borderColor: 'rgba(201,169,110,0.15)' }} />
+      <div className="relative z-10 text-center">
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+          <div className="h-px w-8 sm:w-12" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.3 }} />
+          <Crown className="w-3 h-3 sm:w-4 sm:h-4" style={{ color: 'var(--wedding-gold)', opacity: 0.5 }} />
+          <div className="h-px w-8 sm:w-12" style={{ backgroundColor: 'var(--wedding-gold)', opacity: 0.3 }} />
+        </div>
+        <p className="gold-shimmer text-sm sm:text-lg tracking-[0.3em] uppercase" style={{ fontFamily: 'var(--font-playfair), Georgia, serif' }}>
+          Patrícia &amp; Samuel
+        </p>
+        <OrnamentalDivider color="var(--wedding-gold)" className="my-2 sm:my-3" />
+        <p className="text-[10px] sm:text-xs" style={{ color: 'rgba(201,169,110,0.4)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+          {WEDDING_DATE}
+        </p>
+      </div>
+    </div>
+  )
+
+  // ─── Render a page by type ─────────────────────────
+  const renderPage = (page: typeof bookPages[0]) => {
+    if (!page) return <div className="w-full h-full" style={{ background: 'var(--wedding-ivory)' }} />
+    switch (page.type) {
+      case 'cover': return renderCover()
+      case 'welcome': return renderWelcome()
+      case 'photo': return renderPhotoPage(page.photo)
+      case 'signatures': return renderSignaturesPage(page.allSignatures)
+      case 'backcover': return renderBackCover()
+      default: return <div className="w-full h-full" style={{ background: 'var(--wedding-ivory)' }} />
+    }
+  }
+
+  // ─── Build book spread view ────────────────────────
+  const spread = getSpreadPages()
+
+  // Flip angle for CSS transform
+  const flipTransform = isDragging
+    ? `rotateY(${-flipAngle}deg)`
+    : isFlipping
+    ? `rotateY(${-flipAngle}deg)`
+    : 'rotateY(0deg)'
+
+  const flipTransition = isDragging
+    ? 'none'
+    : isFlipping
+    ? `transform ${FLIP_ANIM_DURATION}ms cubic-bezier(0.645, 0.045, 0.355, 1)`
+    : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+
+  // Shadow intensity during flip
+  const shadowOpacity = Math.min(Math.abs(flipAngle) / 180, 1)
+
+  // Page indicator
+  const pageIndicator = isMobile
+    ? `${currentPage + 1} / ${totalPages}`
+    : `${currentPage + 1}-${Math.min(currentPage + 2, totalPages)} / ${totalPages}`
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--wedding-cream)' }}>
-      {/* ═══ HEADER - Compact & Mobile Friendly ═══ */}
-      <header className="sticky top-0 z-40 border-b backdrop-blur-lg" style={{ backgroundColor: 'rgba(255,249,240,0.92)', borderColor: 'rgba(201,169,110,0.15)' }}>
-        <div className="max-w-5xl mx-auto px-2 sm:px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
-            <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: 'var(--wedding-gold)' }} />
-            <h1 className="text-sm sm:text-lg font-light" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif', letterSpacing: '0.02em' }}>
-              {COUPLE_NAMES}
+    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #FFF9F0 0%, #F8F0FF 50%, #FFF9F0 100%)' }}>
+      {/* Header */}
+      <header className="w-full py-2 sm:py-3 px-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(201,169,110,0.15)' }}>
+        <div className="flex items-center gap-2">
+          <Monogram size="sm" />
+          <div>
+            <h1 className="text-xs sm:text-sm font-light" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
+              Patrícia &amp; Samuel
             </h1>
+            <p className="text-[8px] sm:text-[10px] opacity-50" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+              Álbum de Casamento {WEDDING_DATE}
+            </p>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="flex rounded-lg sm:rounded-xl overflow-hidden" style={{ border: '1px solid rgba(201,169,110,0.2)' }}>
-              <button onClick={() => setViewMode('book')}
-                className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium flex items-center gap-1 transition-all ${viewMode === 'book' ? 'text-white' : ''}`}
-                style={{ backgroundColor: viewMode === 'book' ? 'var(--wedding-royal)' : 'transparent', color: viewMode === 'book' ? 'white' : 'var(--wedding-purple)' }}>
-                <BookOpen className="w-3 h-3" /><span className="hidden sm:inline">Álbum</span>
-              </button>
-              <button onClick={() => setViewMode('grid')}
-                className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium flex items-center gap-1 transition-all ${viewMode === 'grid' ? 'text-white' : ''}`}
-                style={{ backgroundColor: viewMode === 'grid' ? 'var(--wedding-royal)' : 'transparent', color: viewMode === 'grid' ? 'white' : 'var(--wedding-purple)' }}>
-                <Sparkles className="w-3 h-3" /><span className="hidden sm:inline">Galeria</span>
-              </button>
-            </div>
-            <Button onClick={requestUpload} size="sm" className="rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-medium shadow-md h-7 sm:h-8"
-              style={{ backgroundColor: 'var(--wedding-royal)', color: 'white' }}>
-              <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-0.5 sm:mr-1" /><span className="hidden sm:inline">Enviar Foto</span><span className="sm:hidden">Foto</span>
-            </Button>
-          </div>
+        </div>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Badge variant="outline" className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5" style={{ borderColor: 'var(--wedding-lavender)', color: 'var(--wedding-purple)' }}>
+            <ImageIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
+            {regularPhotos.length}
+          </Badge>
+          <Button onClick={requestUpload}
+            className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3 rounded-full"
+            style={{ backgroundColor: 'var(--wedding-gold)', color: 'white', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+            <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-0.5 sm:mr-1" />
+            <span className="hidden sm:inline">Enviar Foto</span>
+            <span className="sm:hidden">Enviar</span>
+          </Button>
         </div>
       </header>
 
-      {/* ═══ MAIN CONTENT ═══ */}
-      <main className="flex-1 flex flex-col">
-        {viewMode === 'book' ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-2 sm:p-3 md:p-6">
-            {/* ═══ 3D BOOK - CodePen Style ═══ */}
-            <div className="w-full max-w-4xl relative book-3d book-shadow rounded-md sm:rounded-lg overflow-hidden"
-              style={{ height: isMobile ? 'calc(100vh - 100px)' : 'calc(100vh - 120px)', minHeight: isMobile ? '320px' : '400px', touchAction: 'manipulation' }}
-              onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-
-              {/* Base Left Page */}
-              <div className="absolute left-0 top-0 w-1/2 h-full" style={{ zIndex: 1 }}>
-                {renderLeftHalf(isFlipping ? currentSpread : currentSpread)}
-                <div className="page-spine-edge-left" />
-              </div>
-              {/* Base Right Page (shows NEXT spread content during flip) */}
-              <div className="absolute right-0 top-0 w-1/2 h-full" style={{ zIndex: 1 }}>
-                {renderRightHalf(isFlipping ? currentSpread + 1 : currentSpread)}
-                <div className="page-spine-edge-right" />
-              </div>
-
-              {/* Shadow overlays during flip */}
-              <div className={`flip-shadow ${isFlipping ? 'flip-shadow-active' : ''}`} />
-              <div className={`flip-shadow-left ${isFlipping ? 'flip-shadow-left-active' : ''}`} />
-
-              {/* ═══ Flippable Page - 3D Transform (CodePen style) ═══ */}
-              {isFlipping && (
-                <div ref={flipPageRef} className="flippable-page"
-                  style={{ zIndex: 10, transform: 'rotateY(0deg)', transition: 'none' }}>
-                  {/* Front face - current right page */}
-                  <div className="page-face page-face-front">
-                    {renderRightHalf(currentSpread)}
-                    <div className="page-spine-edge-right" />
-                    <div className="absolute left-0 top-0 bottom-0 w-[50px] pointer-events-none" style={{ background: 'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 100%)', zIndex: 3 }} />
-                  </div>
-                  {/* Back face - next left page */}
-                  <div className="page-face page-face-back">
-                    {renderLeftHalf(currentSpread + 1)}
-                    <div className="page-spine-edge-left" />
-                    <div className="absolute right-0 top-0 bottom-0 w-[50px] pointer-events-none" style={{ background: 'linear-gradient(to left, rgba(0,0,0,0.08) 0%, transparent 100%)', zIndex: 3 }} />
-                  </div>
-                </div>
-              )}
-
-              {/* Book Spine */}
-              <div className="book-spine" />
-
-              {/* Navigation arrows */}
-              <button onClick={performFlipPrev} disabled={currentSpread === 0 || isFlipping}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 sm:-translate-x-3 z-30 w-8 h-8 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 disabled:opacity-20 disabled:hover:scale-100"
-                style={{ backgroundColor: 'var(--wedding-royal)', color: 'var(--wedding-gold)' }} aria-label="Anterior">
-                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-              <button onClick={performFlipNext} disabled={currentSpread >= totalSpreads - 1 || isFlipping}
-                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 sm:translate-x-3 z-30 w-8 h-8 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 disabled:opacity-20 disabled:hover:scale-100"
-                style={{ backgroundColor: 'var(--wedding-royal)', color: 'var(--wedding-gold)' }} aria-label="Próxima">
-                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-            </div>
-
-            {/* Page indicator */}
-            <div className="mt-2 sm:mt-4 flex items-center gap-1.5 sm:gap-2">
-              <button onClick={performFlipPrev} disabled={currentSpread === 0 || isFlipping} className="p-0.5 rounded disabled:opacity-20" style={{ color: 'var(--wedding-gold)' }}>
-                <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
-              </button>
-              <div className="flex items-center gap-1 sm:gap-2">
-                {Array.from({ length: Math.min(totalSpreads, 10) }, (_, i) => (
-                  <button key={i} onClick={() => goToSpread(i)} disabled={isFlipping}
-                    className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full transition-all duration-500 ${i === currentSpread ? 'w-5 sm:w-7' : ''}`}
-                    style={{ backgroundColor: i === currentSpread ? 'var(--wedding-gold)' : 'var(--wedding-lavender)' }}
-                    aria-label={`Página ${i + 1}`} />
-                ))}
-              </div>
-              <button onClick={performFlipNext} disabled={currentSpread >= totalSpreads - 1 || isFlipping} className="p-0.5 rounded disabled:opacity-20" style={{ color: 'var(--wedding-gold)' }}>
-                <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
-              </button>
-            </div>
-            <p className="text-[9px] sm:text-xs mt-1" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-              {currentSpread === 0 ? 'Capa' : currentSpread === totalSpreads - 1 ? 'Contracapa' : `Página ${currentSpread}`}
+      {/* Book Area */}
+      <main className="flex-1 flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 min-h-0">
+        {isLoadingPhotos ? (
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--wedding-gold)' }} />
+            <p className="text-xs italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+              Carregando álbum...
             </p>
           </div>
         ) : (
-          <div className="max-w-5xl mx-auto w-full px-2 sm:px-4 py-3 sm:py-6">
-            {renderGridView()}
+          <div
+            ref={bookContainerRef}
+            className={`book-3d relative book-shadow rounded-sm ${isMobile ? 'w-full max-w-[420px]' : 'w-full max-w-[900px] lg:max-w-[1000px]'}`}
+            style={{ height: isMobile ? '70vh' : '65vh', maxHeight: '600px', touchAction: 'none' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+          >
+            {/* ─── Mobile: Single page view ─── */}
+            {isMobile && (
+              <>
+                {/* Current page (static) */}
+                <div className="absolute inset-0 rounded-sm overflow-hidden" style={{ zIndex: 1 }}>
+                  {renderPage(spread.left)}
+                </div>
+
+                {/* Flipping page (on top) */}
+                {(isDragging || isFlipping) && (
+                  <div
+                    ref={flipPageRef}
+                    className="flippable-page-mobile rounded-sm"
+                    style={{
+                      transform: flipTransform,
+                      transition: flipTransition,
+                      zIndex: 10,
+                    }}
+                  >
+                    {/* Front face */}
+                    <div className="page-face page-face-front rounded-sm overflow-hidden">
+                      {renderPage(spread.left)}
+                    </div>
+                    {/* Back face */}
+                    <div className="page-face page-face-back rounded-sm overflow-hidden">
+                      {flipAngle > 0 && (currentPage + 1 < totalPages)
+                        ? renderPage(bookPages[currentPage + 1])
+                        : flipAngle < 0 && (currentPage - 1 >= 0)
+                        ? renderPage(bookPages[currentPage - 1])
+                        : null
+                      }
+                    </div>
+                  </div>
+                )}
+
+                {/* Shadow during flip */}
+                {(isDragging || isFlipping) && (
+                  <div className="absolute inset-0 pointer-events-none rounded-sm" style={{
+                    zIndex: 5,
+                    background: 'rgba(45, 27, 61, 0.15)',
+                    opacity: shadowOpacity * 0.3,
+                  }} />
+                )}
+              </>
+            )}
+
+            {/* ─── Desktop: Spread view (left + right pages) ─── */}
+            {!isMobile && (
+              <>
+                {/* Left page (static) */}
+                <div className="absolute left-0 top-0 w-1/2 h-full overflow-hidden rounded-l-sm" style={{ zIndex: 1 }}>
+                  <div className="page-spine-edge-left" />
+                  {renderPage(spread.left)}
+                </div>
+
+                {/* Right page (static) */}
+                <div className="absolute right-0 top-0 w-1/2 h-full overflow-hidden rounded-r-sm" style={{ zIndex: 1 }}>
+                  <div className="page-spine-edge-right" />
+                  {renderPage(spread.right)}
+                </div>
+
+                {/* Spine */}
+                <div className="book-spine" />
+
+                {/* Flipping page overlay (right side flips forward, left side flips backward) */}
+                {(isDragging || isFlipping) && flipAngle !== 0 && (
+                  <>
+                    <div
+                      ref={flipPageRef}
+                      className="flippable-page"
+                      style={{
+                        transform: flipTransform,
+                        transition: flipTransition,
+                        zIndex: 10,
+                      }}
+                    >
+                      {/* Front face: current right page */}
+                      <div className="page-face page-face-front overflow-hidden">
+                        {renderPage(spread.right)}
+                      </div>
+                      {/* Back face: next left page */}
+                      <div className="page-face page-face-back overflow-hidden">
+                        {flipAngle > 0 && (currentPage + 2 < totalPages)
+                          ? renderPage(bookPages[currentPage + 2])
+                          : flipAngle < 0 && (currentPage - 2 >= 0)
+                          ? renderPage(bookPages[currentPage - 1])
+                          : null
+                        }
+                      </div>
+                    </div>
+
+                    {/* Shadow on left page during forward flip */}
+                    {flipAngle > 0 && (
+                      <div className="flip-shadow-left" style={{
+                        opacity: shadowOpacity,
+                        transition: isDragging ? 'none' : 'opacity 0.3s ease',
+                      }} />
+                    )}
+
+                    {/* Shadow under flipping page */}
+                    <div className="flip-shadow" style={{
+                      opacity: shadowOpacity,
+                      width: '50%',
+                      transition: isDragging ? 'none' : 'opacity 0.3s ease',
+                    }} />
+
+                    {/* Depth shadow at spine */}
+                    <div className="flip-depth-shadow" style={{
+                      opacity: shadowOpacity * 0.8,
+                      transition: isDragging ? 'none' : 'opacity 0.3s ease',
+                    }} />
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Drag hint overlay */}
+            {!isDragging && !isFlipping && currentPage === 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                style={{ zIndex: 20 }}
+              >
+                <motion.div
+                  animate={{ x: [0, 20, 0] }}
+                  transition={{ repeat: 3, duration: 1.5, ease: 'easeInOut' }}
+                  className="text-[10px] italic px-3 py-1.5 rounded-full"
+                  style={{
+                    color: 'var(--wedding-gold)',
+                    background: 'rgba(45, 27, 61, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                  }}
+                >
+                  ← Arraste para virar →
+                </motion.div>
+              </motion.div>
+            )}
           </div>
         )}
+
+        {/* Page indicator */}
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-[10px] italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif', opacity: 0.5 }}>
+            {pageIndicator}
+          </span>
+          <div className="flex gap-1">
+            {bookPages.map((_, i) => {
+              // Only show dots for key pages
+              if (i > 1 && i < totalPages - 1 && i % 2 !== 0 && isMobile) return null
+              if (i > 1 && i < totalPages - 1 && !isMobile && i % 2 !== 0) return null
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    if (!isFlipping) {
+                      const target = isMobile ? i : Math.max(0, i - (i % 2 === 0 ? 0 : 1))
+                      setCurrentPage(Math.min(target, maxPage))
+                    }
+                  }}
+                  className="w-1.5 h-1.5 rounded-full transition-all"
+                  style={{
+                    backgroundColor: (isMobile ? i === currentPage : (i === currentPage || i === currentPage + 1)) ? 'var(--wedding-gold)' : 'var(--wedding-lavender)',
+                    opacity: (isMobile ? i === currentPage : (i === currentPage || i === currentPage + 1)) ? 1 : 0.4,
+                  }}
+                  aria-label={`Página ${i + 1}`}
+                />
+              )
+            })}
+          </div>
+        </div>
       </main>
 
-      {/* ═══ FOOTER ═══ */}
-      <footer className="border-t py-1.5 sm:py-2 px-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.8)', borderColor: 'rgba(201,169,110,0.1)' }}>
-        <p className="text-[9px] sm:text-xs" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-          <Heart className="w-2.5 h-2.5 inline mr-1 fill-current" style={{ color: 'var(--wedding-gold)' }} />
-          Feito com amor para {COUPLE_NAMES}
+      {/* Footer */}
+      <footer className="mt-auto py-2 px-4 text-center" style={{ borderTop: '1px solid rgba(201,169,110,0.1)' }}>
+        <p className="text-[9px] italic opacity-30" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+          Feito com ❤ para Patrícia &amp; Samuel — {WEDDING_DATE}
         </p>
       </footer>
 
-      {/* ═══ PIN MODAL ═══ */}
-      <PINModal key={showPinModal ? 'open' : 'closed'} open={showPinModal} onVerified={handlePinVerified} />
-      {showPinModal && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-40"
-          style={{ backgroundColor: 'rgba(45, 27, 61, 0.3)' }} onClick={() => setShowPinModal(false)} />
-      )}
+      {/* PIN Modal */}
+      <PINModal open={showPinModal} onVerified={handlePinVerified} />
 
-      {/* ═══ UPLOAD DIALOG ═══ */}
+      {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent className="max-w-sm sm:max-w-md p-0 overflow-hidden rounded-xl sm:rounded-2xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto" style={{ backgroundColor: 'white' }}>
-          <DialogTitle className="sr-only">Enviar Foto</DialogTitle>
-          <DialogDescription className="sr-only">Envie sua foto para o álbum</DialogDescription>
-          <div className="h-1" style={{ background: 'linear-gradient(90deg, var(--wedding-gold), var(--wedding-royal), var(--wedding-gold))' }} />
-          <div className="p-3 sm:p-5">
-            <div className="flex items-center gap-2 mb-3 sm:mb-4">
-              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--wedding-lavender-soft)' }}>
-                <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: 'var(--wedding-royal)' }} />
-              </div>
-              <h3 className="text-sm sm:text-lg font-light" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-                Enviar Foto
-              </h3>
+        <DialogContent className="max-w-[90vw] sm:max-w-md rounded-2xl p-0 overflow-hidden">
+          <div className="p-4 sm:p-6 space-y-3 sm:space-y-4" style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
+            <DialogTitle className="text-center text-base sm:text-lg" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 inline-block mr-1.5" style={{ color: 'var(--wedding-gold)' }} />
+              Enviar Foto
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Formulário para enviar uma foto ao álbum de casamento
+            </DialogDescription>
+
+            {/* File selection */}
+            <div className="space-y-2">
+              {previewUrl ? (
+                <div className="relative rounded-xl overflow-hidden" style={{ border: '2px solid rgba(201,169,110,0.3)' }}>
+                  <img src={previewUrl} alt="Preview" className="w-full max-h-40 object-contain" style={{ background: 'white' }} />
+                  <button type="button" onClick={clearPreview}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center"
+                    style={{ background: 'rgba(0,0,0,0.5)' }}>
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => cameraInputRef.current?.click()}
+                    className="flex flex-col items-center gap-1.5 p-3 sm:p-4 rounded-xl border-2 border-dashed transition-all hover:border-[var(--wedding-gold)]"
+                    style={{ borderColor: 'var(--wedding-lavender)', background: 'white' }}>
+                    <Camera className="w-5 h-5" style={{ color: 'var(--wedding-purple)' }} />
+                    <span className="text-[10px] font-medium" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>Câmera</span>
+                  </button>
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center gap-1.5 p-3 sm:p-4 rounded-xl border-2 border-dashed transition-all hover:border-[var(--wedding-gold)]"
+                    style={{ borderColor: 'var(--wedding-lavender)', background: 'white' }}>
+                    <Upload className="w-5 h-5" style={{ color: 'var(--wedding-purple)' }} />
+                    <span className="text-[10px] font-medium" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>Arquivo</span>
+                  </button>
+                </div>
+              )}
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileSelect} />
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
             </div>
 
-            <div className="mb-2.5">
-              <label className="text-[10px] sm:text-xs font-medium mb-1 block" style={{ color: 'var(--wedding-purple-deep)' }}>
-                <Users className="w-3 h-3 inline mr-1" style={{ color: 'var(--wedding-gold)' }} />
-                Seu nome
-              </label>
-              <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Digite seu nome"
-                className="h-8 sm:h-10 rounded-lg text-xs sm:text-sm" style={{ borderColor: 'rgba(201,169,110,0.25)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }} maxLength={50} />
+            {/* Guest name */}
+            <div className="relative">
+              <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--wedding-gold)' }} />
+              <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Seu nome"
+                className="pl-8 h-9 text-xs rounded-lg" style={{ borderColor: 'rgba(201,169,110,0.3)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }} maxLength={50} />
             </div>
 
-            <div className="mb-2.5">
-              <label className="text-[10px] sm:text-xs font-medium mb-1 block" style={{ color: 'var(--wedding-purple-deep)' }}>
-                <MessageSquare className="w-3 h-3 inline mr-1" style={{ color: 'var(--wedding-gold)' }} />
-                Mensagem para os noivos
-              </label>
-              <Textarea value={guestMessage} onChange={(e) => setGuestMessage(e.target.value)} placeholder="Deixe uma mensagem especial..."
-                className="rounded-lg resize-none text-xs sm:text-sm" rows={2}
-                style={{ borderColor: 'rgba(201,169,110,0.25)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }} maxLength={200} />
-              <p className="text-[9px] text-right mt-0.5" style={{ color: 'var(--muted-foreground)' }}>{guestMessage.length}/200</p>
-            </div>
-
-            <div className="mb-2.5">
-              <label className="text-[10px] sm:text-xs font-medium mb-1 block" style={{ color: 'var(--wedding-purple-deep)' }}>
-                Moldura
-              </label>
+            {/* Frame selector */}
+            <div>
+              <p className="text-[10px] mb-1.5 font-medium" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>Moldura:</p>
               <FrameSelector selected={selectedFrame} onSelect={setSelectedFrame} />
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-2.5">
-              <Button onClick={() => cameraInputRef.current?.click()} className="h-9 sm:h-11 rounded-lg text-xs font-medium shadow-md"
-                style={{ backgroundColor: 'var(--wedding-royal)', color: 'white' }} asChild>
-                <span><Camera className="w-3.5 h-3.5 mr-1" /> Tirar Foto</span>
-              </Button>
-              <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="h-9 sm:h-11 rounded-lg text-xs font-medium shadow-sm border-2"
-                style={{ borderColor: 'var(--wedding-royal)', color: 'var(--wedding-purple-deep)' }} asChild>
-                <span><Upload className="w-3.5 h-3.5 mr-1" /> Enviar</span>
-              </Button>
-            </div>
+            {/* Message */}
+            <Textarea value={guestMessage} onChange={(e) => setGuestMessage(e.target.value)} placeholder="Uma mensagem para os noivos..."
+              className="text-xs rounded-lg min-h-[60px]" style={{ borderColor: 'rgba(201,169,110,0.3)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }} maxLength={200} />
 
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileSelect} />
-            <input ref={fileInputRef} type="file" accept="image/*" multiple={false} className="hidden" onChange={handleFileSelect} />
-
-            <AnimatePresence>
-              {previewUrl && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-2.5">
-                  <div className="relative rounded-lg overflow-hidden shadow-sm" style={{ border: '2px solid rgba(201,169,110,0.2)' }}>
-                    <img src={previewUrl} alt="Preview" className="w-full max-h-36 sm:max-h-48 object-contain" style={{ backgroundColor: 'var(--wedding-ivory)' }} />
-                    <button onClick={clearPreview} className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center shadow-md"
-                      style={{ backgroundColor: 'rgba(45,27,61,0.7)', color: 'white' }}>
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                </motion.div>
+            {/* Upload button */}
+            <Button onClick={handleUpload} disabled={!selectedFile || isUploading}
+              className="w-full h-10 rounded-xl text-sm font-medium"
+              style={{ backgroundColor: 'var(--wedding-gold)', color: 'white', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+              {isUploading ? (
+                <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Enviando...</>
+              ) : (
+                <><Upload className="w-4 h-4 mr-1.5" /> Enviar Foto</>
               )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {selectedFile && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
-                  <Button onClick={handleUpload} disabled={isUploading}
-                    className="w-full h-9 sm:h-11 rounded-lg text-xs sm:text-base font-medium shadow-lg"
-                    style={{ background: 'linear-gradient(135deg, var(--wedding-royal) 0%, var(--wedding-purple-dark) 100%)', color: 'var(--wedding-gold)' }}>
-                    {isUploading ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...</>
-                    ) : (
-                      <><Upload className="w-4 h-4 mr-2" /> Enviar Foto</>
-                    )}
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ═══ PHOTO VIEWER ═══ */}
-      <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
-        <DialogContent className="max-w-lg sm:max-w-3xl p-0 overflow-hidden rounded-xl sm:rounded-2xl border-0 shadow-2xl" style={{ backgroundColor: 'white' }}>
-          {selectedPhoto && (
-            <>
-              <DialogTitle className="sr-only">Foto de {parseGuestName(selectedPhoto.guestName).name}</DialogTitle>
-              <DialogDescription className="sr-only">Foto enviada por {parseGuestName(selectedPhoto.guestName).name}</DialogDescription>
-              <div className="h-1" style={{ background: 'linear-gradient(90deg, var(--wedding-gold), var(--wedding-royal), var(--wedding-gold))' }} />
-              <div className="relative">
-                <img src={`/uploads/${selectedPhoto.filename}`} alt={`Foto de ${parseGuestName(selectedPhoto.guestName).name}`}
-                  className="w-full max-h-[60vh] sm:max-h-[70vh] object-contain" style={{ backgroundColor: 'var(--wedding-ivory)' }} />
-              </div>
-              <div className="p-3 sm:p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-sm" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
-                      {parseGuestName(selectedPhoto.guestName).name}
-                    </p>
-                    <p className="text-[10px] sm:text-xs" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                      {new Date(selectedPhoto.createdAt).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                  <a href={`/uploads/${selectedPhoto.filename}`} download={selectedPhoto.originalName} target="_blank" rel="noopener noreferrer">
-                    <Button variant="outline" size="sm" className="rounded-lg shadow-sm text-[10px] sm:text-xs" style={{ borderColor: 'rgba(201,169,110,0.3)', color: 'var(--wedding-gold-dark)' }}>
-                      <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1" /> Salvar
-                    </Button>
-                  </a>
-                </div>
-                {parseGuestName(selectedPhoto.guestName).message && (
-                  <div className="mt-2 p-2 sm:p-3 rounded-lg" style={{ backgroundColor: 'var(--wedding-lavender-soft)' }}>
-                    <p className="text-xs sm:text-sm italic" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-                      &ldquo;{parseGuestName(selectedPhoto.guestName).message}&rdquo;
-                    </p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
         </DialogContent>
       </Dialog>
     </div>
