@@ -156,3 +156,26 @@ Stage Summary:
 - `.env` file now in repo for easy clone-and-deploy workflow
 - All project files committed and pushed to https://github.com/bfrpaulondev/memories.git
 - Project builds successfully
+---
+Task ID: 1
+Agent: Main Agent
+Task: Update Cloudinary cloud name and integrate real Cloudinary uploads + test in production
+
+Work Log:
+- Updated CLOUDINARY_CLOUD_NAME from `bfrpaulondev` to `dhsuwosfd` in `.env` and `src/lib/cloudinary.ts`
+- Refactored `src/app/api/photos/route.ts` to upload images to Cloudinary (with base64 fallback)
+- Refactored `src/app/api/photos/signature/route.ts` to upload signatures to Cloudinary (with base64 fallback)
+- Updated `next.config.ts` with Cloudinary remote image patterns for both old and new cloud names
+- Pushed all changes to GitHub (`git push origin main`)
+- Updated CLOUDINARY_CLOUD_NAME env var on Vercel production
+- Deployed to Vercel production (`npx vercel --prod`)
+- Tested photo upload: POST /api/photos → Cloudinary URL returned ✅
+- Tested signature upload: POST /api/photos/signature → Cloudinary URL returned ✅
+- Verified GET /api/photos returns both old (base64) and new (Cloudinary) photos ✅
+
+Stage Summary:
+- Cloud Name `dhsuwosfd` is now correctly configured everywhere
+- Both photo and signature uploads now go to Cloudinary in production
+- Production URL: https://memories-wedding.vercel.app
+- Photo upload result: `https://res.cloudinary.com/dhsuwosfd/image/upload/v1778969819/wedding-album/ojko1b2lzbyf2bjzo5h6.png`
+- Signature upload result: `https://res.cloudinary.com/dhsuwosfd/image/upload/v1778969833/wedding-album/signatures/fdibzqncr6gl95pd6ipl.png`
