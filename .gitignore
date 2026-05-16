@@ -21,8 +21,7 @@ yarn-error.log*
 dev.log
 server.log
 
-# Local env files
-.env
+# Local env files (keep .env for easy deploy import)
 .env.local
 .env.development.local
 .env.test.local
