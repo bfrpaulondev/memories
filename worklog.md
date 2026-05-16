@@ -137,3 +137,22 @@ Complete rewrite of the virtual wedding album app from Prisma/SQLite to MongoDB/
 - ✅ Dev server running on port 3000
 - ✅ No Prisma/SQLite code remaining
 - ✅ All arrow navigation removed, replaced with drag-to-flip
+- ✅ `bun run build` succeeds
+- ✅ Pushed to GitHub: https://github.com/bfrpaulondev/memories.git (main branch)
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Add .env for easy deployment and push to GitHub
+
+Work Log:
+- Created `.env` file with all credentials (MongoDB URI, Cloudinary, PIN) for easy deployment import
+- Updated `.gitignore` to allow `.env` in the repo (removed from ignore list)
+- Verified build succeeds with `bun run build`
+- Committed changes: `feat: add .env for easy deployment, update .gitignore`
+- Force pushed to `origin/main` on GitHub repo
+
+Stage Summary:
+- `.env` file now in repo for easy clone-and-deploy workflow
+- All project files committed and pushed to https://github.com/bfrpaulondev/memories.git
+- Project builds successfully
