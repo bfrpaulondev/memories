@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { v2 as cloudinary } from 'cloudinary';
 import dbConnect from '@/lib/mongodb';
 import Photo from '@/models/Photo';
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dhsuwosfd',
+  api_key: process.env.CLOUDINARY_API_KEY || '533928869964219',
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'OhUowpf7MfQE12ELIHo6FzlyiFc',
+  secure: true,
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,13 +31,36 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const fileBuffer = Buffer.from(bytes);
 
-    // Store as base64 data URL in MongoDB
-    const base64Data = fileBuffer.toString('base64');
-    const dataUrl = `data:image/png;base64,${base64Data}`;
+    // Upload to Cloudinary
+    let cloudinaryUrl = '';
+    let cloudinaryId = `local-sig-${Date.now()}`;
+
+    try {
+      const base64Data = fileBuffer.toString('base64');
+      const dataUri = `data:image/png;base64,${base64Data}`;
+
+      const uploadResult = await cloudinary.uploader.upload(dataUri, {
+        folder: 'wedding-album/signatures',
+        resource_type: 'image',
+        transformation: [
+          { quality: 'auto:good' },
+          { fetch_format: 'auto' },
+        ],
+      });
+
+      cloudinaryUrl = uploadResult.secure_url;
+      cloudinaryId = uploadResult.public_id;
+      console.log(`[Cloudinary] Signature upload success: ${cloudinaryId} → ${cloudinaryUrl}`);
+    } catch (cloudErr) {
+      console.error('[Cloudinary] Signature upload failed, falling back to base64:', cloudErr);
+      // Fallback: store as base64 data URL
+      const base64Data = fileBuffer.toString('base64');
+      cloudinaryUrl = `data:image/png;base64,${base64Data}`;
+    }
 
     const signatureData: any = {
-      cloudinaryId: `local-sig-${Date.now()}`,
-      cloudinaryUrl: dataUrl,
+      cloudinaryId,
+      cloudinaryUrl,
       originalName: `assinatura-${Date.now()}.png`,
       guestName,
       frame: 'classic',
@@ -41,8 +73,8 @@ export async function POST(request: NextRequest) {
     if (conn) {
       try {
         const signature = await Photo.create({
-          cloudinaryId: `local-sig-${Date.now()}`,
-          cloudinaryUrl: dataUrl,
+          cloudinaryId,
+          cloudinaryUrl,
           originalName: `assinatura-${Date.now()}.png`,
           guestName,
           size: fileBuffer.length,
@@ -58,7 +90,7 @@ export async function POST(request: NextRequest) {
           fetch('http://localhost:3001/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'new_signature', photo: { ...signatureData, cloudinaryUrl: dataUrl } }),
+            body: JSON.stringify({ type: 'new_signature', photo: { ...signatureData, cloudinaryUrl } }),
           });
         } catch {}
       } catch (dbErr) {

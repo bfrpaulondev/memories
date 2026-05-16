@@ -1,6 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'bfrpaulondev';
+const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'dhsuwosfd';
 const apiKey = process.env.CLOUDINARY_API_KEY || '533928869964219';
 const apiSecret = process.env.CLOUDINARY_API_SECRET || 'OhUowpf7MfQE12ELIHo6FzlyiFc';
 
