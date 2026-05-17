@@ -3,6 +3,10 @@ import { v2 as cloudinary } from 'cloudinary';
 import dbConnect from '@/lib/mongodb';
 import Photo from '@/models/Photo';
 
+// Route config for Vercel — increase body size limit for photo uploads
+export const maxDuration = 60; // 60 seconds timeout
+export const dynamic = 'force-dynamic';
+
 // Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dhsuwosfd',
@@ -16,6 +20,20 @@ const MASTER_PASSWORD = process.env.MASTER_PASSWORD || '1997';
 
 // In-memory fallback when MongoDB is unavailable
 let memoryPhotos: any[] = [];
+
+// Helper: safely upload to Cloudinary with retry
+async function safeCloudinaryUpload(dataUri: string, options: any, retries = 2): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await cloudinary.uploader.upload(dataUri, options);
+    } catch (err: any) {
+      console.error(`[Cloudinary] Upload attempt ${attempt + 1} failed:`, err?.message);
+      if (attempt === retries) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw new Error('Cloudinary upload failed after retries');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,7 +102,7 @@ export async function POST(request: NextRequest) {
         : 'image/jpeg';
       const dataUri = `data:${mimeType};base64,${base64Data}`;
 
-      const uploadResult = await cloudinary.uploader.upload(dataUri, {
+      const uploadResult = await safeCloudinaryUpload(dataUri, {
         folder: 'wedding-album',
         resource_type: 'image',
         transformation: [

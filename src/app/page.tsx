@@ -48,7 +48,8 @@ interface BookPage {
 type FlipDirection = 'forward' | 'backward'
 
 // ─── Constants ───────────────────────────────────────────
-const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2026'
+// PIN is hardcoded to 2026 — env var is just a fallback
+const WEDDING_PIN = '2026'
 const WEDDING_DATE = '2026'
 const MASTER_PASSWORD = '1997'
 const DRAG_THRESHOLD = 5
@@ -810,7 +811,16 @@ export default function Home() {
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return }
           const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
-          resolve(compressed)
+          // If still too large, compress more aggressively
+          if (compressed.size > 3 * 1024 * 1024) {
+            canvas.toBlob((blob2) => {
+              if (!blob2) { resolve(compressed); return }
+              const extra = new File([blob2], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+              resolve(extra)
+            }, 'image/jpeg', 0.5)
+          } else {
+            resolve(compressed)
+          }
         }, 'image/jpeg', quality)
       }
       img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
@@ -829,9 +839,22 @@ export default function Home() {
       formData.append('frame', selectedFrame)
       formData.append('message', guestMessage.trim())
 
-      const res = await fetch('/api/photos', { method: 'POST', body: formData })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao enviar foto')
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60s timeout
+
+      const res = await fetch('/api/photos', { method: 'POST', body: formData, signal: controller.signal })
+      clearTimeout(timeoutId)
+
+      let data
+      try {
+        data = await res.json()
+      } catch {
+        throw new Error('Erro na resposta do servidor')
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.detail || 'Erro ao enviar foto')
+      }
 
       toast({ title: 'Foto enviada!', description: 'Sua foto foi adicionada ao álbum!' })
       setSelectedFile(null); setPreviewUrl(null); setGuestName(''); setGuestMessage('')
@@ -839,7 +862,10 @@ export default function Home() {
       if (fileInputRef.current) fileInputRef.current.value = ''
       setShowUploadDialog(false); await fetchPhotos()
     } catch (err) {
-      toast({ title: 'Erro ao enviar', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' })
+      const msg = err instanceof Error
+        ? err.name === 'AbortError' ? 'Upload demorou muito. Tente uma foto menor.' : err.message
+        : 'Tente novamente.'
+      toast({ title: 'Erro ao enviar', description: msg, variant: 'destructive' })
     } finally { setIsUploading(false) }
   }
 
