@@ -11,6 +11,9 @@ cloudinary.config({
   secure: true,
 });
 
+// Master password for admin operations
+const MASTER_PASSWORD = process.env.MASTER_PASSWORD || '1997';
+
 // In-memory fallback when MongoDB is unavailable
 let memoryPhotos: any[] = [];
 
@@ -157,6 +160,107 @@ export async function POST(request: NextRequest) {
     console.error('Upload error:', error);
     const detail = error?.message || String(error);
     return NextResponse.json({ error: 'Erro ao fazer upload.', detail }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { masterPassword, photoId, deleteAll } = body;
+
+    // Verify master password
+    if (masterPassword !== MASTER_PASSWORD) {
+      return NextResponse.json({ error: 'Senha master incorreta' }, { status: 403 });
+    }
+
+    const conn = await dbConnect();
+
+    if (deleteAll) {
+      // Delete ALL photos and signatures
+      let deletedCount = 0;
+      let cloudinaryErrors = 0;
+
+      if (conn) {
+        try {
+          const allPhotos = await Photo.find({}).lean();
+          for (const photo of allPhotos) {
+            // Delete from Cloudinary
+            if (photo.cloudinaryId && !photo.cloudinaryId.startsWith('local-')) {
+              try {
+                await cloudinary.uploader.destroy(photo.cloudinaryId);
+                console.log(`[Cloudinary] Deleted: ${photo.cloudinaryId}`);
+              } catch (cloudErr) {
+                console.error(`[Cloudinary] Delete failed for ${photo.cloudinaryId}:`, cloudErr);
+                cloudinaryErrors++;
+              }
+            }
+          }
+          const result = await Photo.deleteMany({});
+          deletedCount = result.deletedCount || 0;
+        } catch (dbErr) {
+          console.error('MongoDB delete all error:', dbErr);
+          return NextResponse.json({ error: 'Erro ao deletar fotos do banco' }, { status: 500 });
+        }
+      }
+
+      // Also clear in-memory
+      memoryPhotos = [];
+
+      return NextResponse.json({
+        success: true,
+        deletedCount,
+        cloudinaryErrors,
+        message: `${deletedCount} itens deletados`,
+      });
+    }
+
+    if (photoId) {
+      // Delete a single photo/signature
+      if (conn) {
+        try {
+          const photo = await Photo.findById(photoId);
+          if (!photo) {
+            return NextResponse.json({ error: 'Foto não encontrada' }, { status: 404 });
+          }
+
+          // Delete from Cloudinary
+          if (photo.cloudinaryId && !photo.cloudinaryId.startsWith('local-')) {
+            try {
+              await cloudinary.uploader.destroy(photo.cloudinaryId);
+              console.log(`[Cloudinary] Deleted: ${photo.cloudinaryId}`);
+            } catch (cloudErr) {
+              console.error(`[Cloudinary] Delete failed for ${photo.cloudinaryId}:`, cloudErr);
+            }
+          }
+
+          // Also delete any signatures linked to this photo
+          const linkedSigs = await Photo.find({ signatureForPhotoId: photoId });
+          for (const sig of linkedSigs) {
+            if (sig.cloudinaryId && !sig.cloudinaryId.startsWith('local-')) {
+              try {
+                await cloudinary.uploader.destroy(sig.cloudinaryId);
+              } catch {}
+            }
+            await sig.deleteOne();
+          }
+
+          await photo.deleteOne();
+        } catch (dbErr) {
+          console.error('MongoDB delete error:', dbErr);
+          return NextResponse.json({ error: 'Erro ao deletar foto' }, { status: 500 });
+        }
+      } else {
+        // In-memory fallback
+        memoryPhotos = memoryPhotos.filter((p) => p.id !== photoId && p.cloudinaryId !== photoId);
+      }
+
+      return NextResponse.json({ success: true, message: 'Item deletado' });
+    }
+
+    return NextResponse.json({ error: 'Especifique photoId ou deleteAll' }, { status: 400 });
+  } catch (error: any) {
+    console.error('Delete error:', error);
+    return NextResponse.json({ error: 'Erro ao deletar', detail: error?.message }, { status: 500 });
   }
 }
 

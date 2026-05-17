@@ -7,7 +7,7 @@ import {
   Camera, Upload, Heart, Lock,
   Pen, Eraser, Loader2, Users, X, Sparkles,
   Image as ImageIcon, Check,
-  Feather, Crown, Gem, PenLine,
+  Feather, Crown, Gem, PenLine, Shield, Trash2, Key,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +50,7 @@ type FlipDirection = 'forward' | 'backward'
 // ─── Constants ───────────────────────────────────────────
 const WEDDING_PIN = process.env.NEXT_PUBLIC_WEDDING_PIN || '2026'
 const WEDDING_DATE = '2026'
+const MASTER_PASSWORD = '1997'
 const DRAG_THRESHOLD = 5
 
 // ─── Utility: Parse guestName with frame & message ───────
@@ -448,6 +449,13 @@ export default function Home() {
   const [selectedFrame, setSelectedFrame] = useState<FrameStyle>('classic')
   const [isMobile, setIsMobile] = useState(false)
 
+  // ─── Admin state ─────────────────────────────────
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [isAdminVerified, setIsAdminVerified] = useState(false)
+  const [adminPassword, setAdminPassword] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null)
+
   // ─── Flip engine state ─────────────────────────────
   const [flipAngle, setFlipAngle] = useState(0) // 0–180 (always positive)
   const [flipDirection, setFlipDirection] = useState<FlipDirection | null>(null)
@@ -484,6 +492,8 @@ export default function Home() {
   useEffect(() => {
     const verified = sessionStorage.getItem('wedding_pin_verified') === 'true'
     if (verified) setIsPinVerified(true)
+    const adminVerified = sessionStorage.getItem('wedding_admin_verified') === 'true'
+    if (adminVerified) setIsAdminVerified(true)
   }, [])
 
   // ─── Compute album pages ───────────────────────────
@@ -846,6 +856,59 @@ export default function Home() {
     return signaturePhotos.find((s) => s.signatureForPhotoId === photoId)
   }
 
+  // ─── Admin: verify master password ──────────────────
+  const verifyAdmin = () => {
+    if (adminPassword === MASTER_PASSWORD) {
+      setIsAdminVerified(true)
+      sessionStorage.setItem('wedding_admin_verified', 'true')
+      toast({ title: 'Modo admin ativado!', description: 'Você pode gerenciar o álbum.' })
+    } else {
+      toast({ title: 'Senha incorreta', variant: 'destructive' })
+      setAdminPassword('')
+    }
+  }
+
+  // ─── Admin: delete a single photo/signature ─────────
+  const handleDeletePhoto = async (photoId: string) => {
+    setDeletingPhotoId(photoId)
+    try {
+      const res = await fetch('/api/photos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ masterPassword: MASTER_PASSWORD, photoId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao deletar')
+      toast({ title: 'Deletado!', description: data.message })
+      await fetchPhotos()
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' })
+    } finally {
+      setDeletingPhotoId(null)
+    }
+  }
+
+  // ─── Admin: delete ALL photos and signatures ────────
+  const handleDeleteAll = async () => {
+    setIsDeleting(true)
+    try {
+      const res = await fetch('/api/photos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ masterPassword: MASTER_PASSWORD, deleteAll: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao deletar tudo')
+      toast({ title: 'Álbum limpo!', description: `${data.deletedCount} itens removidos.` })
+      setPhotos([])
+      await fetchPhotos()
+    } catch (err) {
+      toast({ title: 'Erro', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   // PAGE RENDERERS (preserved from original)
   // ═══════════════════════════════════════════════════════
@@ -1111,6 +1174,12 @@ export default function Home() {
             <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-0.5 sm:mr-1" />
             <span className="hidden sm:inline">Enviar Foto</span>
             <span className="sm:hidden">Enviar</span>
+          </Button>
+          <Button onClick={() => setShowAdminPanel(true)}
+            className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 sm:px-3 rounded-full"
+            style={{ backgroundColor: isAdminVerified ? 'var(--wedding-purple)' : 'transparent', color: isAdminVerified ? 'white' : 'var(--wedding-purple)', border: isAdminVerified ? 'none' : '1px solid var(--wedding-lavender)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+            <Shield className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-0.5 sm:mr-1" />
+            <span className="hidden sm:inline">{isAdminVerified ? 'Admin' : 'Admin'}</span>
           </Button>
         </div>
       </header>
@@ -1552,6 +1621,130 @@ export default function Home() {
                 <><Upload className="w-4 h-4 mr-1.5" /> Enviar Foto</>
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin Panel Dialog */}
+      <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
+        <DialogContent className="max-w-[90vw] sm:max-w-lg rounded-2xl p-0 overflow-hidden">
+          <div className="p-4 sm:p-6 space-y-4" style={{ background: 'linear-gradient(135deg, #FFFAF3 0%, #F8F0FF 100%)' }}>
+            <DialogTitle className="text-center text-base sm:text-lg" style={{ color: 'var(--wedding-purple-deep)', fontFamily: 'var(--font-playfair), Georgia, serif' }}>
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5 inline-block mr-1.5" style={{ color: 'var(--wedding-purple)' }} />
+              Painel Admin
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Painel administrativo para gerenciar fotos e assinaturas do álbum
+            </DialogDescription>
+
+            {!isAdminVerified ? (
+              <div className="space-y-3 text-center">
+                <div className="w-14 h-14 rounded-full mx-auto flex items-center justify-center" style={{ backgroundColor: 'var(--wedding-lavender-soft)' }}>
+                  <Key className="w-6 h-6" style={{ color: 'var(--wedding-purple)' }} />
+                </div>
+                <p className="text-xs" style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+                  Insira a senha master para acessar o painel de administração
+                </p>
+                <div className="flex gap-2 max-w-xs mx-auto">
+                  <Input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') verifyAdmin() }}
+                    placeholder="Senha master"
+                    className="h-9 text-sm rounded-lg text-center"
+                    style={{ borderColor: 'rgba(201,169,110,0.3)', backgroundColor: 'var(--wedding-ivory)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+                  />
+                  <Button onClick={verifyAdmin} className="h-9 px-3 rounded-lg" style={{ backgroundColor: 'var(--wedding-purple)', color: 'white' }}>
+                    <Lock className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded-xl text-center" style={{ background: 'var(--wedding-lavender-soft)' }}>
+                    <p className="text-lg font-bold" style={{ color: 'var(--wedding-purple-deep)' }}>{regularPhotos.length}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>Fotos</p>
+                  </div>
+                  <div className="p-3 rounded-xl text-center" style={{ background: 'var(--wedding-lavender-soft)' }}>
+                    <p className="text-lg font-bold" style={{ color: 'var(--wedding-purple-deep)' }}>{signaturePhotos.length}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>Assinaturas</p>
+                  </div>
+                </div>
+
+                {/* Delete all button */}
+                <Button
+                  onClick={handleDeleteAll}
+                  disabled={isDeleting || (regularPhotos.length === 0 && signaturePhotos.length === 0)}
+                  className="w-full h-10 rounded-xl text-sm font-medium"
+                  style={{ backgroundColor: '#DC2626', color: 'white', fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+                >
+                  {isDeleting ? (
+                    <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Deletando tudo...</>
+                  ) : (
+                    <><Trash2 className="w-4 h-4 mr-1.5" /> Deletar Tudo (Fotos + Assinaturas)</>
+                  )}
+                </Button>
+
+                {/* Photo list with individual delete */}
+                <div className="space-y-2 max-h-[40vh] overflow-y-auto album-scroll">
+                  <p className="text-[10px] font-semibold" style={{ color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+                    Itens individuais:
+                  </p>
+                  {sortedPhotos.length === 0 ? (
+                    <p className="text-xs italic text-center py-4 opacity-40" style={{ color: 'var(--wedding-purple)' }}>
+                      Álbum vazio
+                    </p>
+                  ) : (
+                    sortedPhotos.map((photo) => {
+                      const parsed = parseGuestData(photo.guestName, photo.frame, photo.message)
+                      return (
+                        <div key={photo.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'white', border: '1px solid rgba(201,169,110,0.15)' }}>
+                          <img
+                            src={photo.cloudinaryUrl}
+                            alt={parsed.name}
+                            className="w-10 h-10 rounded object-cover flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-medium truncate" style={{ color: 'var(--wedding-purple-deep)' }}>
+                              {parsed.name}
+                            </p>
+                            <p className="text-[9px] opacity-50" style={{ color: 'var(--wedding-purple)' }}>
+                              {photo.isSignature ? 'Assinatura' : 'Foto'} • {new Date(photo.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => handleDeletePhoto(photo.id)}
+                            disabled={deletingPhotoId === photo.id}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 rounded-full hover:bg-red-50 flex-shrink-0"
+                          >
+                            {deletingPhotoId === photo.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            )}
+                          </Button>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                {/* Admin logout */}
+                <Button
+                  onClick={() => { setIsAdminVerified(false); sessionStorage.removeItem('wedding_admin_verified'); setAdminPassword('') }}
+                  variant="outline"
+                  className="w-full h-8 rounded-lg text-xs"
+                  style={{ borderColor: 'var(--wedding-lavender)', color: 'var(--wedding-purple)', fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+                >
+                  Sair do modo admin
+                </Button>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
